@@ -101,3 +101,134 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: "Build an AI voice agent that creates and manages tasks based on unstructured and structured voice messages or texts. Keep learning and adjusting context until user is satisfied. Target: non-native speakers and people with ADHD."
+
+backend:
+  - task: "API Root and Health Check"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "API root returns version info, health check works"
+
+  - task: "Task CRUD Operations"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Create, Read, Update, Delete endpoints implemented and tested manually"
+
+  - task: "AI Task Extraction from Voice/Text"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Tested with English, Czech, and Vietnamese inputs. AI extracts multiple tasks, detects priority, category, language."
+
+  - task: "Corrections and Learning System"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Correction submission and pattern learning endpoints implemented, needs testing"
+
+  - task: "Statistics Endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "low"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Returns task counts, completion rate, learned patterns count"
+
+frontend:
+  - task: "Home Screen with Task List"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Screenshot verified - shows tasks, stats, filters"
+
+  - task: "Voice Recorder Component"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/components/VoiceRecorder.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Component rendered, needs device testing for actual recording"
+
+  - task: "Text Input Modal"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/components/TextInputModal.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Screenshot verified - shows language selector, examples, submit button"
+
+  - task: "Task Detail/Edit Screen"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/task/[id].tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Implemented with correction submission for learning"
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 1
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Task CRUD Operations"
+    - "AI Task Extraction from Voice/Text"
+    - "Corrections and Learning System"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: "Lamdi MVP implemented with AI-powered task extraction from multilingual voice/text input. Backend uses OpenAI GPT-4o via Emergent LLM key for task parsing. Supports English, Czech, Vietnamese. Learning system stores corrections to improve future extractions. Please test the backend API endpoints."
