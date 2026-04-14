@@ -10,7 +10,7 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { X, Sparkles } from 'lucide-react-native';
 
 interface TextInputModalProps {
   visible: boolean;
@@ -20,10 +20,10 @@ interface TextInputModalProps {
 }
 
 const languages = [
-  { code: undefined, label: 'Auto-detect', flag: '🌐' },
-  { code: 'en', label: 'English', flag: '🇬🇧' },
-  { code: 'cs', label: 'Čeština', flag: '🇨🇿' },
-  { code: 'vi', label: 'Tiếng Việt', flag: '🇻🇳' },
+  { code: undefined, label: 'Auto-detect', flag: '\ud83c\udf10' },
+  { code: 'en', label: 'English', flag: '\ud83c\uddec\ud83c\udde7' },
+  { code: 'cs', label: '\u010ce\u0161tina', flag: '\ud83c\udde8\ud83c\uddff' },
+  { code: 'vi', label: 'Ti\u1ebfng Vi\u1ec7t', flag: '\ud83c\uddfb\ud83c\uddf3' },
 ];
 
 export default function TextInputModal({ visible, onClose, onSubmit, isLoading }: TextInputModalProps) {
@@ -37,63 +37,47 @@ export default function TextInputModal({ visible, onClose, onSubmit, isLoading }
     }
   };
 
-  const placeholders = [
-    'Call supplier Nguyen about rice delivery tomorrow...',
-    'Zavolej do skladu ohledně zítřejší dodávky...',
-    'Gọi cho nhà cung cấp về đơn hàng ngày mai...',
-    'Remind me to check inventory tonight...',
-  ];
-
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={styles.overlay}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={styles.container}>
+        <View style={styles.sheet}>
+          <View style={styles.handle} />
+
           <View style={styles.header}>
             <Text style={styles.title}>Add Task</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={24} color="#6B7280" />
+            <TouchableOpacity testID="close-text-modal" onPress={onClose} style={styles.closeBtn} accessibilityLabel="Close" accessibilityRole="button">
+              <X size={22} color="#5C6A5D" />
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.subtitle}>
-            Describe your task naturally - Lamdi will understand
-          </Text>
+          <Text style={styles.subtitle}>Describe your task naturally — Lamdi will understand</Text>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.languageSelector}>
-            {languages.map((lang) => (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.langRow}>
+            {languages.map((l) => (
               <TouchableOpacity
-                key={lang.code || 'auto'}
-                style={[
-                  styles.languageButton,
-                  selectedLanguage === lang.code && styles.languageButtonActive,
-                ]}
-                onPress={() => setSelectedLanguage(lang.code)}
+                key={l.code || 'auto'}
+                testID={`lang-${l.code || 'auto'}`}
+                style={[styles.langChip, selectedLanguage === l.code && styles.langChipActive]}
+                onPress={() => setSelectedLanguage(l.code)}
+                accessibilityLabel={l.label}
+                accessibilityRole="button"
               >
-                <Text style={styles.languageFlag}>{lang.flag}</Text>
-                <Text
-                  style={[
-                    styles.languageLabel,
-                    selectedLanguage === lang.code && styles.languageLabelActive,
-                  ]}
-                >
-                  {lang.label}
+                <Text style={styles.langFlag}>{l.flag}</Text>
+                <Text style={[styles.langLabel, selectedLanguage === l.code && styles.langLabelActive]}>
+                  {l.label}
                 </Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
 
           <TextInput
+            testID="task-text-input"
             style={styles.input}
-            placeholder={placeholders[Math.floor(Math.random() * placeholders.length)]}
-            placeholderTextColor="#9CA3AF"
+            placeholder="e.g. Call supplier Nguyen about rice delivery tomorrow..."
+            placeholderTextColor="#B8C4B9"
             multiline
             numberOfLines={4}
             value={text}
@@ -102,22 +86,24 @@ export default function TextInputModal({ visible, onClose, onSubmit, isLoading }
             textAlignVertical="top"
           />
 
-          <View style={styles.exampleContainer}>
-            <Text style={styles.exampleTitle}>Examples:</Text>
-            <Text style={styles.exampleText}>• "Order 50kg rice from Nguyen, urgent"</Text>
-            <Text style={styles.exampleText}>• "Zítra zavolat do banky"</Text>
-            <Text style={styles.exampleText}>• "Nhắc tôi kiểm tra hàng tồn kho"</Text>
+          <View style={styles.examples}>
+            <Text style={styles.exTitle}>Try saying:</Text>
+            <Text style={styles.exItem}>{'\u2022'} "Order 50kg rice from Nguyen, urgent"</Text>
+            <Text style={styles.exItem}>{'\u2022'} "Z\u00edtra zavolat do banky"</Text>
+            <Text style={styles.exItem}>{'\u2022'} "Nh\u1eafc t\u00f4i ki\u1ec3m tra h\u00e0ng t\u1ed3n kho"</Text>
           </View>
 
           <TouchableOpacity
-            style={[styles.submitButton, (!text.trim() || isLoading) && styles.submitButtonDisabled]}
+            testID="submit-task-button"
+            style={[styles.submitBtn, (!text.trim() || isLoading) && styles.submitDisabled]}
             onPress={handleSubmit}
             disabled={!text.trim() || isLoading}
+            activeOpacity={0.8}
+            accessibilityLabel="Create task with AI"
+            accessibilityRole="button"
           >
-            <Ionicons name="sparkles" size={20} color="#FFFFFF" />
-            <Text style={styles.submitButtonText}>
-              {isLoading ? 'Processing...' : 'Create Task with AI'}
-            </Text>
+            <Sparkles size={18} color="#FFFFFF" />
+            <Text style={styles.submitText}>{isLoading ? 'Processing...' : 'Create Task with AI'}</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -126,110 +112,24 @@ export default function TextInputModal({ visible, onClose, onSubmit, isLoading }
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  container: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    maxHeight: '90%',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1F2937',
-  },
-  closeButton: {
-    padding: 4,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 16,
-  },
-  languageSelector: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  languageButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
-    marginRight: 8,
-    gap: 6,
-  },
-  languageButtonActive: {
-    backgroundColor: '#EEF2FF',
-    borderWidth: 1,
-    borderColor: '#6366F1',
-  },
-  languageFlag: {
-    fontSize: 16,
-  },
-  languageLabel: {
-    fontSize: 13,
-    color: '#6B7280',
-  },
-  languageLabelActive: {
-    color: '#6366F1',
-    fontWeight: '600',
-  },
-  input: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 16,
-    padding: 16,
-    fontSize: 16,
-    color: '#1F2937',
-    minHeight: 120,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  exampleContainer: {
-    marginTop: 16,
-    padding: 12,
-    backgroundColor: '#F0FDF4',
-    borderRadius: 12,
-  },
-  exampleTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#059669',
-    marginBottom: 4,
-  },
-  exampleText: {
-    fontSize: 12,
-    color: '#047857',
-    marginVertical: 2,
-  },
-  submitButton: {
-    flexDirection: 'row',
-    backgroundColor: '#6366F1',
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 20,
-    gap: 8,
-  },
-  submitButtonDisabled: {
-    backgroundColor: '#C7D2FE',
-  },
-  submitButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 36, maxHeight: '90%' },
+  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#E8EBE8', alignSelf: 'center', marginBottom: 16 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  title: { fontSize: 24, fontWeight: '700', color: '#2D372E' },
+  closeBtn: { padding: 6 },
+  subtitle: { fontSize: 14, color: '#5C6A5D', marginBottom: 16 },
+  langRow: { flexDirection: 'row', marginBottom: 16, flexGrow: 0 },
+  langChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 24, backgroundColor: '#F4F5F4', marginRight: 8, gap: 6 },
+  langChipActive: { backgroundColor: '#E3EAE4', borderWidth: 1.5, borderColor: '#4A6B53' },
+  langFlag: { fontSize: 16 },
+  langLabel: { fontSize: 13, color: '#5C6A5D' },
+  langLabelActive: { color: '#4A6B53', fontWeight: '600' },
+  input: { backgroundColor: '#F9F9F6', borderRadius: 16, padding: 16, fontSize: 16, color: '#2D372E', minHeight: 120, borderWidth: 1, borderColor: '#E8EBE8' },
+  examples: { marginTop: 16, padding: 14, backgroundColor: '#DDF0E6', borderRadius: 14 },
+  exTitle: { fontSize: 12, fontWeight: '700', color: '#3E7D5F', marginBottom: 4 },
+  exItem: { fontSize: 12, color: '#3E7D5F', marginVertical: 1 },
+  submitBtn: { flexDirection: 'row', backgroundColor: '#4A6B53', borderRadius: 24, padding: 16, alignItems: 'center', justifyContent: 'center', marginTop: 20, gap: 8 },
+  submitDisabled: { backgroundColor: '#B8C4B9' },
+  submitText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
 });

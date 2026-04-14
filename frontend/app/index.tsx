@@ -12,7 +12,7 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Type, CheckSquare, ListFilter } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useTaskStore } from '../src/stores/taskStore';
 import TaskCard from '../src/components/TaskCard';
@@ -26,17 +26,8 @@ type FilterType = 'all' | 'pending' | 'completed';
 export default function HomeScreen() {
   const router = useRouter();
   const {
-    tasks,
-    stats,
-    isLoading,
-    error,
-    lastExtraction,
-    fetchTasks,
-    fetchStats,
-    processVoiceInput,
-    completeTask,
-    removeTask,
-    clearError,
+    tasks, stats, isLoading, error,
+    fetchTasks, fetchStats, processVoiceInput, completeTask, removeTask, clearError,
   } = useTaskStore();
 
   const [refreshing, setRefreshing] = useState(false);
@@ -46,10 +37,7 @@ export default function HomeScreen() {
   const [extractionResult, setExtractionResult] = useState<TaskExtractionResponse | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  useEffect(() => {
-    fetchTasks();
-    fetchStats();
-  }, []);
+  useEffect(() => { fetchTasks(); fetchStats(); }, []);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -88,7 +76,6 @@ export default function HomeScreen() {
   };
 
   const handleCompleteTask = async (task: Task) => {
-    const newStatus = task.status === 'completed' ? 'pending' : 'completed';
     try {
       await completeTask(task.id);
       fetchStats();
@@ -98,84 +85,74 @@ export default function HomeScreen() {
   };
 
   const handleDeleteTask = (task: Task) => {
-    Alert.alert(
-      'Delete Task',
-      `Are you sure you want to delete "${task.title}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await removeTask(task.id);
-              fetchStats();
-            } catch (err: any) {
-              Alert.alert('Error', err.message || 'Failed to delete task');
-            }
-          },
+    Alert.alert('Delete Task', `Delete "${task.title}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          try { await removeTask(task.id); fetchStats(); }
+          catch (err: any) { Alert.alert('Error', err.message || 'Failed to delete'); }
         },
-      ]
-    );
+      },
+    ]);
   };
 
-  const filteredTasks = tasks.filter((task) => {
-    if (filter === 'pending') return task.status !== 'completed';
-    if (filter === 'completed') return task.status === 'completed';
+  const filtered = tasks.filter((t) => {
+    if (filter === 'pending') return t.status !== 'completed';
+    if (filter === 'completed') return t.status === 'completed';
     return true;
   });
 
   const renderHeader = () => (
-    <View style={styles.headerContainer}>
-      <View style={styles.welcomeSection}>
-        <Text style={styles.welcomeText}>Welcome to</Text>
-        <Text style={styles.appName}>Lamdi</Text>
+    <View style={styles.hdr}>
+      {/* Welcome */}
+      <View style={styles.welcome}>
+        <Text style={styles.welcomeLabel}>Welcome to</Text>
+        <Text style={styles.brand}>Lamdi</Text>
         <Text style={styles.tagline}>Your AI Operations Manager</Text>
       </View>
 
+      {/* Stats */}
       {stats && (
-        <View style={styles.statsContainer}>
+        <View style={styles.statsRow}>
           <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{stats.pending}</Text>
-            <Text style={styles.statLabel}>Pending</Text>
+            <Text style={styles.statNum}>{stats.pending}</Text>
+            <Text style={styles.statLbl}>Pending</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={[styles.statNumber, { color: '#10B981' }]}>{stats.completed}</Text>
-            <Text style={styles.statLabel}>Done</Text>
+            <Text style={[styles.statNum, { color: '#3E7D5F' }]}>{stats.completed}</Text>
+            <Text style={styles.statLbl}>Done</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={[styles.statNumber, { color: '#EF4444' }]}>{stats.urgent_tasks}</Text>
-            <Text style={styles.statLabel}>Urgent</Text>
+            <Text style={[styles.statNum, { color: '#D35F5F' }]}>{stats.urgent_tasks}</Text>
+            <Text style={styles.statLbl}>Urgent</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={[styles.statNumber, { color: '#6366F1' }]}>{stats.learned_patterns}</Text>
-            <Text style={styles.statLabel}>Learned</Text>
+            <Text style={[styles.statNum, { color: '#D48C70' }]}>{stats.learned_patterns}</Text>
+            <Text style={styles.statLbl}>Learned</Text>
           </View>
         </View>
       )}
 
-      <View style={styles.inputSection}>
-        <VoiceRecorder
-          onTranscription={handleVoiceTranscription}
-          isProcessing={isProcessing}
-        />
-        
-        <TouchableOpacity
-          style={styles.textInputButton}
-          onPress={() => setShowTextInput(true)}
-        >
-          <Ionicons name="text" size={20} color="#6366F1" />
-          <Text style={styles.textInputButtonText}>Or type your task</Text>
+      {/* Voice + text input */}
+      <View style={styles.inputCard}>
+        <VoiceRecorder onTranscription={handleVoiceTranscription} isProcessing={isProcessing} />
+        <TouchableOpacity testID="open-text-input" style={styles.typeBtn} onPress={() => setShowTextInput(true)} activeOpacity={0.7}>
+          <Type size={18} color="#4A6B53" />
+          <Text style={styles.typeBtnText}>Or type your task</Text>
         </TouchableOpacity>
       </View>
 
-      <View style={styles.filterContainer}>
+      {/* Filters */}
+      <View style={styles.filterRow}>
         {(['all', 'pending', 'completed'] as FilterType[]).map((f) => (
           <TouchableOpacity
             key={f}
-            style={[styles.filterButton, filter === f && styles.filterButtonActive]}
+            testID={`filter-${f}`}
+            style={[styles.filterChip, filter === f && styles.filterActive]}
             onPress={() => setFilter(f)}
           >
+            {f === 'completed' ? <CheckSquare size={13} color={filter === f ? '#FFFFFF' : '#5C6A5D'} /> : <ListFilter size={13} color={filter === f ? '#FFFFFF' : '#5C6A5D'} />}
             <Text style={[styles.filterText, filter === f && styles.filterTextActive]}>
               {f.charAt(0).toUpperCase() + f.slice(1)}
             </Text>
@@ -183,31 +160,28 @@ export default function HomeScreen() {
         ))}
       </View>
 
-      <View style={styles.taskListHeader}>
-        <Text style={styles.taskListTitle}>Your Tasks</Text>
-        <Text style={styles.taskCount}>{filteredTasks.length} tasks</Text>
+      <View style={styles.listHdr}>
+        <Text style={styles.listTitle}>Your Tasks</Text>
+        <Text style={styles.listCount}>{filtered.length} tasks</Text>
       </View>
     </View>
   );
 
-  const renderEmptyList = () => (
-    <View style={styles.emptyContainer}>
-      <Ionicons name="checkbox-outline" size={64} color="#D1D5DB" />
+  const renderEmpty = () => (
+    <View style={styles.empty}>
+      <CheckSquare size={56} color="#E8EBE8" />
       <Text style={styles.emptyTitle}>No tasks yet</Text>
-      <Text style={styles.emptySubtitle}>
-        Tap the microphone or type to add your first task
-      </Text>
+      <Text style={styles.emptySub}>Tap the microphone or type to add your first task</Text>
     </View>
   );
 
   if (error) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle" size={48} color="#EF4444" />
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={() => { clearError(); fetchTasks(); }}>
-            <Text style={styles.retryButtonText}>Retry</Text>
+        <View style={styles.errWrap}>
+          <Text style={styles.errText}>{error}</Text>
+          <TouchableOpacity testID="retry-button" style={styles.retryBtn} onPress={() => { clearError(); fetchTasks(); }}>
+            <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -216,13 +190,14 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F9FAFB" />
-      
+      <StatusBar barStyle="dark-content" backgroundColor="#F9F9F6" />
+
       <FlatList
-        data={filteredTasks}
+        testID="task-list"
+        data={filtered}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={renderHeader}
-        ListEmptyComponent={!isLoading ? renderEmptyList : null}
+        ListEmptyComponent={!isLoading ? renderEmpty : null}
         renderItem={({ item }) => (
           <TaskCard
             task={item}
@@ -231,16 +206,17 @@ export default function HomeScreen() {
             onDelete={() => handleDeleteTask(item)}
           />
         )}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#4A6B53" />}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       />
 
-      {isLoading && !refreshing && (
+      {isProcessing && (
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="#6366F1" />
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color="#4A6B53" />
+            <Text style={styles.loadingText}>Lamdi is thinking...</Text>
+          </View>
         </View>
       )}
 
@@ -255,183 +231,52 @@ export default function HomeScreen() {
         visible={showExtractionResult}
         result={extractionResult}
         onClose={() => setShowExtractionResult(false)}
-        onEditTask={(taskId) => {
-          setShowExtractionResult(false);
-          router.push(`/task/${taskId}`);
-        }}
+        onEditTask={(taskId) => { setShowExtractionResult(false); router.push(`/task/${taskId}`); }}
       />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
-  headerContainer: {
-    paddingHorizontal: 16,
-  },
-  welcomeSection: {
-    alignItems: 'center',
-    paddingTop: Platform.OS === 'android' ? 40 : 20,
-    paddingBottom: 20,
-  },
-  welcomeText: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  appName: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: '#6366F1',
-    letterSpacing: -1,
-  },
-  tagline: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    marginTop: 4,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 12,
-    marginHorizontal: 4,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1F2937',
-  },
-  statLabel: {
-    fontSize: 11,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  inputSection: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  textInputButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    gap: 8,
-  },
-  textInputButtonText: {
-    color: '#6366F1',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  filterContainer: {
-    flexDirection: 'row',
-    marginBottom: 16,
-    gap: 8,
-  },
-  filterButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-  },
-  filterButtonActive: {
-    backgroundColor: '#6366F1',
-  },
-  filterText: {
-    fontSize: 13,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  filterTextActive: {
-    color: '#FFFFFF',
-  },
-  taskListHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  taskListTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1F2937',
-  },
-  taskCount: {
-    fontSize: 13,
-    color: '#6B7280',
-  },
-  listContent: {
-    paddingBottom: 100,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 40,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#6B7280',
-    marginTop: 16,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    textAlign: 'center',
-    marginTop: 8,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#EF4444',
-    textAlign: 'center',
-    marginTop: 16,
-    marginBottom: 20,
-  },
-  retryButton: {
-    backgroundColor: '#6366F1',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  retryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  loadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  container: { flex: 1, backgroundColor: '#F9F9F6' },
+  hdr: { paddingHorizontal: 20 },
+
+  welcome: { alignItems: 'center', paddingTop: Platform.OS === 'android' ? 44 : 16, paddingBottom: 20 },
+  welcomeLabel: { fontSize: 13, color: '#5C6A5D', letterSpacing: 1 },
+  brand: { fontSize: 40, fontWeight: '800', color: '#4A6B53', letterSpacing: -1 },
+  tagline: { fontSize: 13, color: '#B8C4B9', marginTop: 2 },
+
+  statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20, gap: 8 },
+  statCard: { flex: 1, backgroundColor: '#FFFFFF', borderRadius: 16, paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: '#E8EBE8' },
+  statNum: { fontSize: 22, fontWeight: '700', color: '#2D372E' },
+  statLbl: { fontSize: 11, color: '#5C6A5D', marginTop: 2 },
+
+  inputCard: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: '#E8EBE8' },
+  typeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, gap: 8 },
+  typeBtnText: { color: '#4A6B53', fontSize: 14, fontWeight: '500' },
+
+  filterRow: { flexDirection: 'row', marginBottom: 16, gap: 8 },
+  filterChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 24, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E8EBE8', gap: 6 },
+  filterActive: { backgroundColor: '#4A6B53', borderColor: '#4A6B53' },
+  filterText: { fontSize: 13, color: '#5C6A5D', fontWeight: '500' },
+  filterTextActive: { color: '#FFFFFF' },
+
+  listHdr: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  listTitle: { fontSize: 18, fontWeight: '700', color: '#2D372E' },
+  listCount: { fontSize: 13, color: '#5C6A5D' },
+
+  listContent: { paddingBottom: 100 },
+
+  empty: { alignItems: 'center', paddingVertical: 60, paddingHorizontal: 40 },
+  emptyTitle: { fontSize: 18, fontWeight: '600', color: '#5C6A5D', marginTop: 16 },
+  emptySub: { fontSize: 14, color: '#B8C4B9', textAlign: 'center', marginTop: 8 },
+
+  errWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
+  errText: { fontSize: 16, color: '#D35F5F', textAlign: 'center', marginBottom: 20 },
+  retryBtn: { backgroundColor: '#4A6B53', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 16 },
+  retryText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
+
+  loadingOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(249,249,246,0.9)', justifyContent: 'center', alignItems: 'center' },
+  loadingBox: { alignItems: 'center', padding: 32, backgroundColor: '#FFFFFF', borderRadius: 20, borderWidth: 1, borderColor: '#E8EBE8' },
+  loadingText: { color: '#4A6B53', fontSize: 16, fontWeight: '600', marginTop: 16 },
 });

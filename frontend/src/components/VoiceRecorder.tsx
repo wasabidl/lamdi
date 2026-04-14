@@ -1,16 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
-  Platform,
   Alert,
   Animated,
+  Platform,
 } from 'react-native';
-import { Audio } from 'expo-av';
-import { Ionicons } from '@expo/vector-icons';
+import { useAudioRecorder, AudioModule, RecordingPresets } from 'expo-audio';
+import { Mic, Square } from 'lucide-react-native';
 
 interface VoiceRecorderProps {
   onTranscription: (text: string) => void;
@@ -18,217 +17,166 @@ interface VoiceRecorderProps {
 }
 
 export default function VoiceRecorder({ onTranscription, isProcessing }: VoiceRecorderProps) {
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [isRecording, setIsRecording] = useState(false);
-  const [permissionResponse, setPermissionResponse] = useState<Audio.PermissionResponse | null>(null);
-  const [pulseAnim] = useState(new Animated.Value(1));
-  const [recordingDuration, setRecordingDuration] = useState(0);
-
-  useEffect(() => {
-    (async () => {
-      const permission = await Audio.requestPermissionsAsync();
-      setPermissionResponse(permission);
-    })();
-  }, []);
+  const [duration, setDuration] = useState(0);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const ringAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isRecording) {
-      interval = setInterval(() => {
-        setRecordingDuration((prev) => prev + 1);
-      }, 1000);
-      
-      // Pulse animation
+      interval = setInterval(() => setDuration((d) => d + 1), 1000);
+
       Animated.loop(
         Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.2,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 500,
-            useNativeDriver: true,
-          }),
+          Animated.timing(pulseAnim, { toValue: 1.15, duration: 600, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+        ])
+      ).start();
+
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(ringAnim, { toValue: 1, duration: 1200, useNativeDriver: true }),
+          Animated.timing(ringAnim, { toValue: 0, duration: 0, useNativeDriver: true }),
         ])
       ).start();
     } else {
-      setRecordingDuration(0);
+      setDuration(0);
       pulseAnim.setValue(1);
+      ringAnim.setValue(0);
     }
     return () => clearInterval(interval);
   }, [isRecording]);
 
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
+  const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
   const startRecording = async () => {
     try {
-      if (!permissionResponse?.granted) {
-        const permission = await Audio.requestPermissionsAsync();
-        if (!permission.granted) {
-          Alert.alert('Permission Required', 'Microphone access is needed to record voice notes.');
-          return;
-        }
-        setPermissionResponse(permission);
+      const status = await AudioModule.requestRecordingPermissionsAsync();
+      if (!status.granted) {
+        Alert.alert('Permission Needed', 'Microphone access is required to record voice notes.');
+        return;
       }
-
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      
-      setRecording(recording);
+      await recorder.prepareToRecordAsync();
+      recorder.record();
       setIsRecording(true);
     } catch (err) {
-      console.error('Failed to start recording', err);
-      Alert.alert('Error', 'Failed to start recording. Please try again.');
+      console.error('Recording error:', err);
+      // Fallback: prompt for text input directly
+      promptTextFallback();
     }
   };
 
   const stopRecording = async () => {
-    if (!recording) return;
-
+    if (!isRecording) return;
     try {
+      await recorder.stop();
       setIsRecording(false);
-      await recording.stopAndUnloadAsync();
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-      });
-
-      const uri = recording.getURI();
-      setRecording(null);
-
-      if (uri) {
-        // For MVP, we'll show a text input dialog since we don't have server-side transcription yet
-        // In production, you'd send the audio to a speech-to-text service
-        Alert.prompt(
-          'Voice Recording Complete',
-          'Please type what you said (or edit the transcription):',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Create Task',
-              onPress: (text) => {
-                if (text && text.trim()) {
-                  onTranscription(text.trim());
-                }
-              },
-            },
-          ],
-          'plain-text',
-          '',
-          'default'
-        );
-      }
+      // For web/preview, fall back to text prompt since we can't transcribe audio locally
+      promptTextFallback();
     } catch (err) {
-      console.error('Failed to stop recording', err);
-      Alert.alert('Error', 'Failed to process recording.');
+      console.error('Stop recording error:', err);
+      setIsRecording(false);
+      promptTextFallback();
     }
   };
 
-  if (isProcessing) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.processingContainer}>
-          <ActivityIndicator size="large" color="#6366F1" />
-          <Text style={styles.processingText}>Processing your voice...</Text>
-        </View>
-      </View>
-    );
-  }
+  const promptTextFallback = () => {
+    if (Platform.OS === 'web') {
+      const text = window.prompt('What did you say? (Type your task here):');
+      if (text && text.trim()) {
+        onTranscription(text.trim());
+      }
+    } else {
+      Alert.prompt(
+        'Voice Captured',
+        'Type what you said (or edit):',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Create Task',
+            onPress: (text) => {
+              if (text && text.trim()) onTranscription(text.trim());
+            },
+          },
+        ],
+        'plain-text'
+      );
+    }
+  };
+
+  const ringScale = ringAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.5] });
+  const ringOpacity = ringAnim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.4, 0.15, 0] });
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} testID="voice-recorder">
       {isRecording && (
-        <View style={styles.recordingInfo}>
-          <View style={styles.recordingDot} />
-          <Text style={styles.recordingText}>Recording... {formatDuration(recordingDuration)}</Text>
+        <View style={styles.durationRow}>
+          <View style={styles.liveDot} />
+          <Text style={styles.durationText}>Recording {fmt(duration)}</Text>
         </View>
       )}
-      
-      <Animated.View style={[styles.buttonWrapper, { transform: [{ scale: pulseAnim }] }]}>
-        <TouchableOpacity
-          style={[styles.recordButton, isRecording && styles.recordingActive]}
-          onPress={isRecording ? stopRecording : startRecording}
-          activeOpacity={0.8}
-        >
-          <Ionicons
-            name={isRecording ? 'stop' : 'mic'}
-            size={32}
-            color="#FFFFFF"
+
+      <View style={styles.fabWrapper}>
+        {isRecording && (
+          <Animated.View
+            style={[
+              styles.ring,
+              { transform: [{ scale: ringScale }], opacity: ringOpacity },
+            ]}
           />
-        </TouchableOpacity>
-      </Animated.View>
-      
-      <Text style={styles.hint}>
-        {isRecording ? 'Tap to stop' : 'Tap to speak'}
-      </Text>
+        )}
+        <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+          <TouchableOpacity
+            testID="voice-record-button"
+            style={[styles.fab, isRecording && styles.fabRecording]}
+            onPress={isRecording ? stopRecording : startRecording}
+            activeOpacity={0.8}
+            accessible
+            accessibilityLabel={isRecording ? 'Stop recording' : 'Start recording'}
+            accessibilityRole="button"
+          >
+            {isRecording ? (
+              <Square size={28} color="#FFFFFF" fill="#FFFFFF" />
+            ) : (
+              <Mic size={36} color="#FFFFFF" />
+            )}
+          </TouchableOpacity>
+        </Animated.View>
+      </View>
+
+      <Text style={styles.hint}>{isRecording ? 'Tap to stop' : 'Tap to speak'}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    alignItems: 'center',
-    paddingVertical: 20,
-  },
-  recordingInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  recordingDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#EF4444',
-    marginRight: 8,
-  },
-  recordingText: {
-    color: '#EF4444',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  buttonWrapper: {
-    marginBottom: 12,
-  },
-  recordButton: {
+  container: { alignItems: 'center', paddingVertical: 16 },
+  durationRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  liveDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#D35F5F', marginRight: 8 },
+  durationText: { color: '#D35F5F', fontSize: 15, fontWeight: '600' },
+  fabWrapper: { alignItems: 'center', justifyContent: 'center', width: 100, height: 100, marginBottom: 8 },
+  ring: {
+    position: 'absolute',
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#6366F1',
+    backgroundColor: '#D48C70',
+  },
+  fab: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#D48C70',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#6366F1',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowColor: '#D48C70',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 10,
   },
-  recordingActive: {
-    backgroundColor: '#EF4444',
-    shadowColor: '#EF4444',
-  },
-  hint: {
-    color: '#9CA3AF',
-    fontSize: 14,
-  },
-  processingContainer: {
-    alignItems: 'center',
-    padding: 20,
-  },
-  processingText: {
-    color: '#6366F1',
-    fontSize: 16,
-    marginTop: 12,
-  },
+  fabRecording: { backgroundColor: '#D35F5F', shadowColor: '#D35F5F' },
+  hint: { color: '#5C6A5D', fontSize: 13 },
 });

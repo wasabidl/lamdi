@@ -7,7 +7,7 @@ import {
   Modal,
   ScrollView,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { X, Sparkles, Check, Pencil, Lightbulb, Folder, Calendar } from 'lucide-react-native';
 import { TaskExtractionResponse } from '../types';
 
 interface ExtractionResultModalProps {
@@ -17,144 +17,94 @@ interface ExtractionResultModalProps {
   onEditTask: (taskId: string) => void;
 }
 
-const priorityColors: Record<string, string> = {
-  urgent: '#DC2626',
-  high: '#D97706',
-  medium: '#2563EB',
-  low: '#059669',
+const priorityColors: Record<string, { bg: string; text: string }> = {
+  urgent: { bg: '#FBEAEB', text: '#D35F5F' },
+  high: { bg: '#F9EDDF', text: '#C7823B' },
+  medium: { bg: '#E3EAE4', text: '#4A6B53' },
+  low: { bg: '#DDF0E6', text: '#3E7D5F' },
 };
 
-export default function ExtractionResultModal({
-  visible,
-  result,
-  onClose,
-  onEditTask,
-}: ExtractionResultModalProps) {
+export default function ExtractionResultModal({ visible, result, onClose, onEditTask }: ExtractionResultModalProps) {
   if (!result) return null;
 
-  const confidencePercent = Math.round(result.confidence * 100);
-  const confidenceColor = 
-    confidencePercent >= 80 ? '#10B981' :
-    confidencePercent >= 60 ? '#F59E0B' : '#EF4444';
+  const pct = Math.round(result.confidence * 100);
+  const confColor = pct >= 80 ? '#3E7D5F' : pct >= 60 ? '#C7823B' : '#D35F5F';
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={styles.container}>
+        <View style={styles.sheet}>
+          <View style={styles.handle} />
+
           <View style={styles.header}>
             <View style={styles.headerLeft}>
-              <Ionicons name="sparkles" size={24} color="#6366F1" />
+              <Sparkles size={22} color="#D48C70" />
               <Text style={styles.title}>Tasks Created</Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={24} color="#6B7280" />
+            <TouchableOpacity testID="close-extraction-modal" onPress={onClose} style={styles.closeBtn}>
+              <X size={22} color="#5C6A5D" />
             </TouchableOpacity>
           </View>
 
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{result.tasks.length}</Text>
+              <Text style={styles.statVal}>{result.tasks.length}</Text>
               <Text style={styles.statLabel}>Tasks</Text>
             </View>
-            <View style={styles.statDivider} />
+            <View style={styles.divider} />
             <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: confidenceColor }]}>
-                {confidencePercent}%
-              </Text>
+              <Text style={[styles.statVal, { color: confColor }]}>{pct}%</Text>
               <Text style={styles.statLabel}>Confidence</Text>
             </View>
-            <View style={styles.statDivider} />
+            <View style={styles.divider} />
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>
-                {result.language_detected.toUpperCase()}
-              </Text>
+              <Text style={styles.statVal}>{result.language_detected.toUpperCase()}</Text>
               <Text style={styles.statLabel}>Language</Text>
             </View>
           </View>
 
-          <View style={styles.interpretationBox}>
-            <Ionicons name="bulb-outline" size={16} color="#6366F1" />
-            <Text style={styles.interpretationText}>
-              {result.raw_interpretation}
-            </Text>
+          <View style={styles.interp}>
+            <Lightbulb size={14} color="#4A6B53" />
+            <Text style={styles.interpText}>{result.raw_interpretation}</Text>
           </View>
 
-          <ScrollView style={styles.taskList} showsVerticalScrollIndicator={false}>
-            {result.tasks.map((task, index) => (
-              <TouchableOpacity
-                key={task.id}
-                style={styles.taskItem}
-                onPress={() => onEditTask(task.id)}
-              >
-                <View style={styles.taskHeader}>
-                  <View style={styles.taskNumber}>
-                    <Text style={styles.taskNumberText}>{index + 1}</Text>
+          <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
+            {result.tasks.map((task, i) => {
+              const pc = priorityColors[task.priority] || priorityColors.medium;
+              return (
+                <TouchableOpacity key={task.id} testID={`extraction-task-${i}`} style={styles.taskItem} onPress={() => onEditTask(task.id)} activeOpacity={0.7}>
+                  <View style={styles.taskHead}>
+                    <View style={styles.num}><Text style={styles.numText}>{i + 1}</Text></View>
+                    <Text style={styles.taskTitle} numberOfLines={2}>{task.title}</Text>
                   </View>
-                  <Text style={styles.taskTitle} numberOfLines={2}>
-                    {task.title}
-                  </Text>
-                </View>
-
-                {task.description ? (
-                  <Text style={styles.taskDescription} numberOfLines={2}>
-                    {task.description}
-                  </Text>
-                ) : null}
-
-                <View style={styles.taskMeta}>
-                  <View
-                    style={[
-                      styles.priorityBadge,
-                      { backgroundColor: `${priorityColors[task.priority]}20` },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.priorityText,
-                        { color: priorityColors[task.priority] },
-                      ]}
-                    >
-                      {task.priority}
-                    </Text>
+                  {task.description ? <Text style={styles.taskDesc} numberOfLines={2}>{task.description}</Text> : null}
+                  <View style={styles.taskMeta}>
+                    <View style={[styles.badge, { backgroundColor: pc.bg }]}>
+                      <Text style={[styles.badgeText, { color: pc.text }]}>{task.priority}</Text>
+                    </View>
+                    {task.category ? (
+                      <View style={styles.tagBadge}><Folder size={10} color="#5C6A5D" /><Text style={styles.tagText}>{task.category}</Text></View>
+                    ) : null}
+                    {task.due_date ? (
+                      <View style={styles.tagBadge}><Calendar size={10} color="#5C6A5D" /><Text style={styles.tagText}>{task.due_date}</Text></View>
+                    ) : null}
                   </View>
-
-                  {task.category && (
-                    <View style={styles.categoryBadge}>
-                      <Ionicons name="folder-outline" size={12} color="#6B7280" />
-                      <Text style={styles.categoryText}>{task.category}</Text>
-                    </View>
-                  )}
-
-                  {task.due_date && (
-                    <View style={styles.dateBadge}>
-                      <Ionicons name="calendar-outline" size={12} color="#6B7280" />
-                      <Text style={styles.dateText}>{task.due_date}</Text>
-                    </View>
-                  )}
-                </View>
-
-                <View style={styles.editHint}>
-                  <Text style={styles.editHintText}>Tap to edit & correct</Text>
-                  <Ionicons name="create-outline" size={14} color="#9CA3AF" />
-                </View>
-              </TouchableOpacity>
-            ))}
+                  <View style={styles.editRow}>
+                    <Text style={styles.editHint}>Tap to edit & correct</Text>
+                    <Pencil size={12} color="#B8C4B9" />
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              Tap any task to edit. Corrections help Lamdi learn your preferences!
-            </Text>
+            <Text style={styles.footerText}>Corrections help Lamdi learn your preferences!</Text>
           </View>
 
-          <TouchableOpacity style={styles.doneButton} onPress={onClose}>
-            <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-            <Text style={styles.doneButtonText}>Done</Text>
+          <TouchableOpacity testID="extraction-done-button" style={styles.doneBtn} onPress={onClose} activeOpacity={0.8}>
+            <Check size={18} color="#FFFFFF" />
+            <Text style={styles.doneBtnText}>Done</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -163,197 +113,36 @@ export default function ExtractionResultModal({
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  container: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    maxHeight: '85%',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#1F2937',
-  },
-  closeButton: {
-    padding: 4,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1F2937',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  statDivider: {
-    width: 1,
-    backgroundColor: '#E5E7EB',
-    marginHorizontal: 8,
-  },
-  interpretationBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#EEF2FF',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-    gap: 8,
-  },
-  interpretationText: {
-    flex: 1,
-    fontSize: 13,
-    color: '#4338CA',
-    lineHeight: 18,
-  },
-  taskList: {
-    maxHeight: 300,
-  },
-  taskItem: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  taskHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  taskNumber: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#6366F1',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  taskNumberText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  taskTitle: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1F2937',
-  },
-  taskDescription: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginBottom: 10,
-    marginLeft: 34,
-  },
-  taskMeta: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginLeft: 34,
-  },
-  priorityBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  priorityText: {
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'capitalize',
-  },
-  categoryBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
-  },
-  categoryText: {
-    fontSize: 11,
-    color: '#6B7280',
-  },
-  dateBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
-  },
-  dateText: {
-    fontSize: 11,
-    color: '#6B7280',
-  },
-  editHint: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    marginTop: 10,
-    gap: 4,
-  },
-  editHintText: {
-    fontSize: 11,
-    color: '#9CA3AF',
-  },
-  footer: {
-    backgroundColor: '#FEF3C7',
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 8,
-  },
-  footerText: {
-    fontSize: 12,
-    color: '#92400E',
-    textAlign: 'center',
-  },
-  doneButton: {
-    flexDirection: 'row',
-    backgroundColor: '#10B981',
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 16,
-    gap: 8,
-  },
-  doneButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 36, maxHeight: '85%' },
+  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#E8EBE8', alignSelf: 'center', marginBottom: 16 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  title: { fontSize: 22, fontWeight: '700', color: '#2D372E' },
+  closeBtn: { padding: 6 },
+  statsRow: { flexDirection: 'row', backgroundColor: '#F9F9F6', borderRadius: 16, padding: 16, marginBottom: 16 },
+  statItem: { flex: 1, alignItems: 'center' },
+  statVal: { fontSize: 20, fontWeight: '700', color: '#2D372E' },
+  statLabel: { fontSize: 12, color: '#5C6A5D', marginTop: 2 },
+  divider: { width: 1, backgroundColor: '#E8EBE8', marginHorizontal: 8 },
+  interp: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#E3EAE4', borderRadius: 12, padding: 12, marginBottom: 16, gap: 8 },
+  interpText: { flex: 1, fontSize: 13, color: '#2D372E', lineHeight: 18 },
+  list: { maxHeight: 280 },
+  taskItem: { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: '#E8EBE8' },
+  taskHead: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
+  num: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#4A6B53', justifyContent: 'center', alignItems: 'center', marginRight: 10 },
+  numText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
+  taskTitle: { flex: 1, fontSize: 15, fontWeight: '600', color: '#2D372E' },
+  taskDesc: { fontSize: 13, color: '#5C6A5D', marginBottom: 10, marginLeft: 34 },
+  taskMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginLeft: 34 },
+  badge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20 },
+  badgeText: { fontSize: 11, fontWeight: '600', textTransform: 'capitalize' },
+  tagBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F4F5F4', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, gap: 4 },
+  tagText: { fontSize: 11, color: '#5C6A5D' },
+  editRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 10, gap: 4 },
+  editHint: { fontSize: 11, color: '#B8C4B9' },
+  footer: { backgroundColor: '#F9EDDF', borderRadius: 12, padding: 12, marginTop: 8 },
+  footerText: { fontSize: 12, color: '#C7823B', textAlign: 'center', fontWeight: '500' },
+  doneBtn: { flexDirection: 'row', backgroundColor: '#3E7D5F', borderRadius: 24, padding: 16, alignItems: 'center', justifyContent: 'center', marginTop: 16, gap: 8 },
+  doneBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
 });
