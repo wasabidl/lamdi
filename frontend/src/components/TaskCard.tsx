@@ -3,6 +3,7 @@ import {
   View,
   Text,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
 } from 'react-native';
 import { CircleCheck, Circle, Trash2, Folder, Calendar, Globe, ArrowUpCircle, ArrowDownCircle, AlertCircle, MinusCircle } from 'lucide-react-native';
@@ -53,7 +54,7 @@ export default function TaskCard({ task, onPress, onComplete, onDelete }: TaskCa
       accessibilityLabel={`Task: ${task.title}, Priority: ${task.priority}`}
       accessibilityRole="button"
     >
-      <TouchableOpacity
+      <Pressable
         testID={`task-check-${task.id}`}
         style={styles.checkBtn}
         onPress={onComplete}
@@ -67,7 +68,7 @@ export default function TaskCard({ task, onPress, onComplete, onDelete }: TaskCa
         ) : (
           <Circle size={26} color="#B8C4B9" />
         )}
-      </TouchableOpacity>
+      </Pressable>
 
       <View style={styles.body}>
         <Text style={[styles.title, isCompleted && styles.titleDone]} numberOfLines={2}>
@@ -107,7 +108,7 @@ export default function TaskCard({ task, onPress, onComplete, onDelete }: TaskCa
         ) : null}
       </View>
 
-      <TouchableOpacity
+      <Pressable
         testID={`task-delete-${task.id}`}
         onPress={onDelete}
         hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
@@ -117,7 +118,7 @@ export default function TaskCard({ task, onPress, onComplete, onDelete }: TaskCa
         accessibilityRole="button"
       >
         <Trash2 size={18} color="#B8C4B9" />
-      </TouchableOpacity>
+      </Pressable>
     </TouchableOpacity>
   );
 }
