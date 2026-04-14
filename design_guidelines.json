@@ -1,0 +1,113 @@
+{
+  "theme": "Light",
+  "archetype": "1 (Organic & Earthy)",
+  "emotional_tone": "Calm, focused, empowering, frictionless",
+  "accessibility": {
+    "adhd_friendly": true,
+    "practices": [
+      "Minimize visual noise and distractions.",
+      "Ensure predictable navigation and consistency.",
+      "Provide progress feedback and structure.",
+      "Use clear, scannable typography with generous line spacing.",
+      "Highly visible primary CTA (Voice Recording Button)."
+    ]
+  },
+  "colors": {
+    "background": "#F9F9F6",
+    "surface": "#FFFFFF",
+    "primary": "#4A6B53",
+    "primary_light": "#E3EAE4",
+    "accent": "#D48C70",
+    "accent_light": "#FAEFEA",
+    "text_primary": "#2D372E",
+    "text_secondary": "#5C6A5D",
+    "success": "#3E7D5F",
+    "success_bg": "#DDF0E6",
+    "warning": "#C7823B",
+    "warning_bg": "#F9EDDF",
+    "error": "#D35F5F",
+    "error_bg": "#FBEAEB",
+    "border": "#E8EBE8"
+  },
+  "typography": {
+    "heading_font": "Manrope",
+    "body_font": "IBM Plex Sans",
+    "scales": {
+      "h1": "text-4xl tracking-tight leading-tight",
+      "h2": "text-2xl tracking-tight",
+      "h3": "text-xl",
+      "body": "text-base leading-relaxed",
+      "small": "text-sm",
+      "label": "text-xs tracking-[0.05em] uppercase"
+    }
+  },
+  "spacing_and_layout": {
+    "padding": "Generous spacing. Containers: p-6. Screen edge padding: px-6. List items gap: gap-4.",
+    "border_radius": "rounded-2xl for main cards, rounded-full for buttons and badges.",
+    "shadows": "shadow-[0_4px_24px_rgba(0,0,0,0.04)] for subtle elevation, shadow-none for flat elements."
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-[#4A6B53] text-white rounded-full font-medium py-4 px-6 flex-row items-center justify-center",
+      "voice_fab": "Absolute bottom-8 self-center w-20 h-20 rounded-full bg-[#D48C70] shadow-[0_8px_32px_rgba(212,140,112,0.4)] flex items-center justify-center",
+      "secondary": "bg-[#E3EAE4] text-[#4A6B53] rounded-full font-medium py-4 px-6 flex-row items-center justify-center"
+    },
+    "cards": {
+      "task_card": "bg-white p-5 rounded-2xl border border-[#E8EBE8] mb-4 shadow-sm",
+      "stats_card": "bg-white p-6 rounded-2xl flex-1 items-center justify-center shadow-sm"
+    },
+    "badges": {
+      "priority_high": "bg-[#FBEAEB] text-[#D35F5F] px-3 py-1 rounded-full text-xs font-semibold overflow-hidden",
+      "status_pending": "bg-[#F9EDDF] text-[#C7823B] px-3 py-1 rounded-full text-xs font-semibold overflow-hidden",
+      "status_done": "bg-[#DDF0E6] text-[#3E7D5F] px-3 py-1 rounded-full text-xs font-semibold overflow-hidden"
+    },
+    "inputs": {
+      "text": "bg-[#F9F9F6] border border-[#E8EBE8] rounded-xl px-4 py-4 text-base text-[#2D372E]",
+      "dropdown": "bg-white border border-[#E8EBE8] rounded-xl px-4 py-3"
+    }
+  },
+  "motion_and_interactions": {
+    "button_press": "Scale down slightly (0.97) on press.",
+    "voice_recording": "Pulsating ring around the FAB while active (scale 1.0 to 1.2, opacity 0.5 to 0).",
+    "list_entry": "Staggered fade and slide up.",
+    "task_complete": "Satisfying bounce/scale-up on the checkbox, followed by fade out or strikethrough."
+  },
+  "icons": {
+    "library": "lucide-react-native",
+    "stroke_width": 2,
+    "size": {
+      "small": 16,
+      "default": 24,
+      "large": 32,
+      "voice": 40
+    }
+  },
+  "media": {
+    "empty_state_illustration": {
+      "url": "https://images.unsplash.com/photo-1767605562698-f4d51fe5de04?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NjZ8MHwxfHNlYXJjaHwxfHxzdWNjdWxlbnQlMjBwbGFudCUyMHdoaXRlJTIwcG90JTIwY2FsbXxlbnwwfHx8fDE3NzYxOTk1Nzh8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Potted plant on a white background, representing 'All caught up' or empty state. Very calm and relaxing."
+    },
+    "workspace_background": {
+      "url": "https://images.unsplash.com/photo-1449247709967-d4461a6a6103?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDR8MHwxfHNlYXJjaHwxfHxtaW5pbWFsaXN0JTIwY2FsbSUyMHdvcmtzcGFjZSUyMGVtcHR5JTIwZGVza3xlbnwwfHx8fDE3NzYxOTk1NzR8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Minimalist calm workspace. Use sparingly as a top header background for dashboard or stats view."
+    },
+    "avatar_placeholder": {
+      "url": "https://images.unsplash.com/photo-1775436992732-57f17ef88745?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzF8MHwxfHNlYXJjaHwxfHxjYWxtJTIwcGVyc29uJTIwcG9ydHJhaXQlMjBzb2Z0JTIwbGlnaHR8ZW58MHx8fHwxNzc2MTk5NTg5fDA&ixlib=rb-4.1.0&q=85",
+      "description": "Calm user portrait."
+    }
+  },
+  "instructions_to_main_agent": {
+    "framework": "React Native (Expo SDK 54)",
+    "styling": "Use NativeWind (Tailwind CSS for React Native) or StyleSheet. The provided classes map directly to NativeWind.",
+    "layout_patterns": [
+      "Wrap main screens in SafeAreaView to prevent notch collisions.",
+      "Use KeyboardAvoidingView for screens with text inputs.",
+      "Ensure bottom tab navigator or bottom sheet leaves space for the Voice FAB.",
+      "Do NOT use HTML elements (div, span). Use View, Text, TouchableOpacity, ScrollView, TextInput.",
+      "Use explicit activeOpacity on all interactive elements (buttons, task items)."
+    ],
+    "testing_attributes": "All interactive elements must include a testID attribute (e.g., testID='voice-record-button').",
+    "accessibility_props": "Use accessible={true}, accessibilityLabel, and accessibilityRole on all interactive elements to support screen readers, crucial for non-native speakers and ADHD users.",
+    "javascript_note": "You have .js files not .tsx files, ensure you are writing valid modern Javascript."
+  }
+}
