@@ -18,10 +18,12 @@ Lamdi ("just work" in Vietnamese) is a voice-first, multilingual AI operations m
 - Uses OpenAI GPT-4o via Emergent LLM key
 - Confidence scoring for extraction quality
 
-#### 2. Voice Input
+#### 2. Voice Input (Whisper-Powered)
 - Device microphone recording (expo-audio)
+- Server-side Whisper transcription (OpenAI whisper-1)
+- Audio sent as base64 to `/api/transcribe-base64` endpoint
 - Text-based fallback for web preview
-- Language auto-detection or manual selection
+- Language auto-detection or manual selection (EN, CS, VI)
 
 #### 3. Task Management
 - Full CRUD (Create, Read, Update, Delete)
@@ -35,7 +37,16 @@ Lamdi ("just work" in Vietnamese) is a voice-first, multilingual AI operations m
 - AI learns from corrections to improve future extractions
 - Pattern types: phrase_to_priority, keyword_to_category, time_expression, action_verb
 
-#### 5. Statistics Dashboard
+#### 5. Persistent Reminders (Push Notifications)
+- Auto-scheduled when tasks are created
+- Priority-based intervals: urgent=30min, high=2hr, medium/low=4hr
+- Backend stores reminder state in MongoDB `reminders` collection
+- Frontend polls every 2 minutes for pending reminders
+- Local push notifications via expo-notifications
+- Reminders repeat until task is marked as completed
+- Cancelled automatically when task is completed
+
+#### 6. Statistics Dashboard
 - Pending/Completed/Urgent task counts
 - Completion rate
 - Number of learned patterns
