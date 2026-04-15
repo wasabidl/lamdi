@@ -11,7 +11,8 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Record voice notes to create tasks"
+        "NSMicrophoneUsageDescription": "Record voice notes to create tasks",
+        "NSSpeechRecognitionUsageDescription": "Transcribe voice into tasks hands-free"
       }
     },
     "android": {
@@ -20,7 +21,9 @@
         "backgroundColor": "#000"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": ["RECORD_AUDIO"]
+      "permissions": [
+        "RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -42,6 +45,13 @@
         "expo-audio",
         {
           "microphonePermission": "Record voice notes to create tasks"
+        }
+      ],
+      [
+        "@jamsch/expo-speech-recognition",
+        {
+          "microphonePermission": "Record voice notes to create tasks",
+          "speechRecognitionPermission": "Transcribe voice into tasks hands-free"
         }
       ]
     ],
