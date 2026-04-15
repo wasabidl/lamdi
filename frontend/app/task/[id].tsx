@@ -13,14 +13,25 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ArrowLeft, Save, Mic, Clock, Globe } from 'lucide-react-native';
+import { ArrowLeft, Save, Mic, Clock, Globe, Bell, BellOff } from 'lucide-react-native';
 import { useTaskStore } from '../../src/stores/taskStore';
-import { getTask, updateTask, submitCorrection } from '../../src/services/api';
+import { getTask, updateTask, submitCorrection, configureReminder, disableReminder } from '../../src/services/api';
 import { Task, TaskUpdate } from '../../src/types';
+import { scheduleTaskReminder, cancelTaskReminder } from '../../src/services/notifications';
 
 const priorities = ['low', 'medium', 'high', 'urgent'] as const;
 const statuses = ['pending', 'in_progress', 'completed', 'cancelled'] as const;
 const categories = ['supplier', 'customer', 'inventory', 'staff', 'finance', 'personal', 'other'] as const;
+
+const reminderIntervals = [
+  { minutes: 15, label: '15 min' },
+  { minutes: 30, label: '30 min' },
+  { minutes: 60, label: '1 hour' },
+  { minutes: 120, label: '2 hours' },
+  { minutes: 240, label: '4 hours' },
+  { minutes: 480, label: '8 hours' },
+  { minutes: 1440, label: '24 hours' },
+] as const;
 
 const priorityColors: Record<string, { bg: string; text: string }> = {
   urgent: { bg: '#FBEAEB', text: '#D35F5F' },
@@ -52,9 +63,22 @@ export default function TaskDetailScreen() {
   const [category, setCategory] = useState<string>('');
   const [dueDate, setDueDate] = useState('');
 
+  // Reminder state
+  const [reminderEnabled, setReminderEnabled] = useState(true);
+  const [reminderInterval, setReminderInterval] = useState(240); // default 4h
+  const [reminderSaving, setReminderSaving] = useState(false);
+
   const [originalValues, setOriginalValues] = useState<Partial<Task>>({});
 
   useEffect(() => { loadTask(); }, [id]);
+
+  // Auto-set reminder interval based on priority
+  useEffect(() => {
+    if (priority === 'urgent') setReminderInterval(30);
+    else if (priority === 'high') setReminderInterval(120);
+    else if (priority === 'medium') setReminderInterval(240);
+    else setReminderInterval(480);
+  }, [priority]);
 
   const loadTask = async () => {
     if (!id) return;
@@ -68,12 +92,45 @@ export default function TaskDetailScreen() {
       setStatus(t.status);
       setCategory(t.category || '');
       setDueDate(t.due_date || '');
+      setReminderEnabled(t.reminder_enabled !== false);
       setOriginalValues({ title: t.title, description: t.description, priority: t.priority, category: t.category, due_date: t.due_date });
     } catch {
       Alert.alert('Error', 'Failed to load task');
       router.back();
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveReminder = async () => {
+    if (!id || !task) return;
+    setReminderSaving(true);
+    try {
+      if (reminderEnabled) {
+        await configureReminder(id, reminderInterval);
+        if (Platform.OS !== 'web') {
+          await scheduleTaskReminder(id, task.title, task.priority, reminderInterval);
+        }
+        Alert.alert('Reminder Set', `You'll be reminded every ${reminderIntervals.find(r => r.minutes === reminderInterval)?.label || reminderInterval + ' min'} until this task is done.`);
+      } else {
+        await disableReminder(id);
+        if (Platform.OS !== 'web') {
+          await cancelTaskReminder(id);
+        }
+        Alert.alert('Reminder Off', 'Reminders disabled for this task.');
+      }
+    } catch (err: any) {
+      // If 404, it means no reminder exists yet - create one
+      if (reminderEnabled) {
+        try {
+          await configureReminder(id, reminderInterval);
+          Alert.alert('Reminder Set', `Reminder created.`);
+        } catch {
+          Alert.alert('Error', 'Failed to configure reminder');
+        }
+      }
+    } finally {
+      setReminderSaving(false);
     }
   };
 
@@ -98,6 +155,15 @@ export default function TaskDetailScreen() {
             try { await submitCorrection(id, c.field, c.original, c.corrected, task.original_input); } catch {}
           }
         }
+
+        // If task completed, cancel reminder
+        if (updates.status === 'completed') {
+          try {
+            await disableReminder(id);
+            if (Platform.OS !== 'web') await cancelTaskReminder(id);
+          } catch {}
+        }
+
         fetchTasks();
         Alert.alert('Saved', corrections.length > 0 ? 'Task updated! Lamdi is learning from your corrections.' : 'Task updated!', [
           { text: 'OK', onPress: () => router.back() },
@@ -219,6 +285,92 @@ export default function TaskDetailScreen() {
             <TextInput testID="task-duedate-input" style={styles.input} value={dueDate} onChangeText={setDueDate} placeholder="2026-04-20" placeholderTextColor="#B8C4B9" />
           </View>
 
+          {/* ===== REMINDER SECTION ===== */}
+          <View style={styles.reminderSection}>
+            <View style={styles.reminderHeader}>
+              <Bell size={18} color="#D48C70" />
+              <Text style={styles.reminderTitle}>Persistent Reminders</Text>
+            </View>
+            <Text style={styles.reminderDesc}>
+              Lamdi will keep reminding you until this task is done. Never forget again.
+            </Text>
+
+            {/* Toggle */}
+            <View style={styles.reminderToggleRow}>
+              <Text style={styles.reminderToggleLabel}>Reminders</Text>
+              <TouchableOpacity
+                testID="reminder-toggle"
+                style={[styles.toggleBtn, reminderEnabled ? styles.toggleOn : styles.toggleOff]}
+                onPress={() => setReminderEnabled(!reminderEnabled)}
+                activeOpacity={0.7}
+              >
+                {reminderEnabled ? <Bell size={16} color="#FFFFFF" /> : <BellOff size={16} color="#5C6A5D" />}
+                <Text style={[styles.toggleText, reminderEnabled ? styles.toggleTextOn : styles.toggleTextOff]}>
+                  {reminderEnabled ? 'ON' : 'OFF'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Interval selector */}
+            {reminderEnabled && (
+              <View style={styles.intervalSection}>
+                <Text style={styles.intervalLabel}>Remind me every:</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.intervalScroll}>
+                  <View style={styles.intervalRow}>
+                    {reminderIntervals.map((r) => (
+                      <TouchableOpacity
+                        key={r.minutes}
+                        testID={`interval-${r.minutes}`}
+                        style={[
+                          styles.intervalChip,
+                          reminderInterval === r.minutes && styles.intervalChipActive,
+                        ]}
+                        onPress={() => setReminderInterval(r.minutes)}
+                      >
+                        <Text
+                          style={[
+                            styles.intervalChipText,
+                            reminderInterval === r.minutes && styles.intervalChipTextActive,
+                          ]}
+                        >
+                          {r.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+
+                <Text style={styles.intervalHint}>
+                  {priority === 'urgent'
+                    ? 'Urgent tasks default to 30-min reminders'
+                    : priority === 'high'
+                    ? 'High priority tasks default to 2-hour reminders'
+                    : 'Customize your reminder interval above'}
+                </Text>
+              </View>
+            )}
+
+            {/* Save reminder button */}
+            <TouchableOpacity
+              testID="save-reminder-button"
+              style={styles.reminderSaveBtn}
+              onPress={handleSaveReminder}
+              disabled={reminderSaving}
+              activeOpacity={0.8}
+            >
+              {reminderSaving ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Bell size={16} color="#FFFFFF" />
+                  <Text style={styles.reminderSaveBtnText}>
+                    {reminderEnabled ? 'Save Reminder' : 'Turn Off Reminder'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
           {/* Meta */}
           {task.language_detected && (
             <View style={styles.metaRow}>
@@ -265,6 +417,71 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: '#E3EAE4', borderColor: '#4A6B53' },
   chipText: { fontSize: 13, color: '#5C6A5D', textTransform: 'capitalize' },
   chipTextActive: { color: '#4A6B53', fontWeight: '700' },
+
+  // Reminder section
+  reminderSection: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#E8EBE8',
+  },
+  reminderHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  reminderTitle: { fontSize: 16, fontWeight: '700', color: '#2D372E' },
+  reminderDesc: { fontSize: 13, color: '#5C6A5D', marginBottom: 16, lineHeight: 18 },
+
+  reminderToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  reminderToggleLabel: { fontSize: 14, fontWeight: '600', color: '#2D372E' },
+  toggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
+    gap: 6,
+  },
+  toggleOn: { backgroundColor: '#D48C70' },
+  toggleOff: { backgroundColor: '#F4F5F4', borderWidth: 1, borderColor: '#E8EBE8' },
+  toggleText: { fontSize: 13, fontWeight: '700' },
+  toggleTextOn: { color: '#FFFFFF' },
+  toggleTextOff: { color: '#5C6A5D' },
+
+  intervalSection: { marginBottom: 16 },
+  intervalLabel: { fontSize: 13, fontWeight: '600', color: '#2D372E', marginBottom: 10 },
+  intervalScroll: { flexGrow: 0, marginBottom: 8 },
+  intervalRow: { flexDirection: 'row', gap: 8 },
+  intervalChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 24,
+    backgroundColor: '#F9F9F6',
+    borderWidth: 1.5,
+    borderColor: '#E8EBE8',
+  },
+  intervalChipActive: {
+    backgroundColor: '#FAEFEA',
+    borderColor: '#D48C70',
+  },
+  intervalChipText: { fontSize: 13, color: '#5C6A5D', fontWeight: '500' },
+  intervalChipTextActive: { color: '#D48C70', fontWeight: '700' },
+  intervalHint: { fontSize: 11, color: '#B8C4B9', fontStyle: 'italic' },
+
+  reminderSaveBtn: {
+    flexDirection: 'row',
+    backgroundColor: '#D48C70',
+    borderRadius: 14,
+    padding: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  reminderSaveBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
 
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   metaText: { fontSize: 13, color: '#5C6A5D' },

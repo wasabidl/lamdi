@@ -77,29 +77,48 @@ export default function VoiceRecorder({ onTranscription, isProcessing }: VoiceRe
       setIsRecording(false);
 
       const uri = recorder.uri;
-      if (uri && Platform.OS !== 'web') {
-        // Read audio file as base64 and send to Whisper
+      if (uri) {
+        // Native device: read audio file as base64 and send to Whisper
         setIsTranscribing(true);
         try {
           const base64 = await FileSystem.readAsStringAsync(uri, {
             encoding: FileSystem.EncodingType.Base64,
           });
+          
+          // Check we actually got audio data
+          if (!base64 || base64.length < 100) {
+            Alert.alert('Recording issue', 'Audio was too short or empty. Please try again and speak clearly.');
+            return;
+          }
+
           const ext = uri.split('.').pop() || 'm4a';
           const result = await transcribeAudio(base64, ext);
           if (result.success && result.text && result.text.trim()) {
             onTranscription(result.text.trim());
           } else {
-            Alert.alert('No speech detected', 'Could not detect any speech. Please try again.');
+            Alert.alert('No speech detected', 'Could not detect any speech in the recording. Please try again.');
           }
         } catch (err: any) {
           console.error('Whisper transcription error:', err);
-          Alert.alert('Transcription Error', err.message || 'Failed to transcribe audio. Try typing instead.');
+          // Offer text fallback if Whisper fails
+          if (Platform.OS === 'ios' || Platform.OS === 'android') {
+            Alert.alert(
+              'Transcription issue',
+              'Voice could not be transcribed. Would you like to type your task instead?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Type it', onPress: () => promptTextFallback() },
+              ]
+            );
+          }
         } finally {
           setIsTranscribing(false);
         }
-      } else {
-        // Web fallback: prompt for text
+      } else if (Platform.OS === 'web') {
+        // Web: prompt for text since we can't access the audio file
         promptTextFallback();
+      } else {
+        Alert.alert('Recording Error', 'Could not access the recorded audio. Please try again.');
       }
     } catch (err) {
       console.error('Stop recording error:', err);
@@ -115,6 +134,7 @@ export default function VoiceRecorder({ onTranscription, isProcessing }: VoiceRe
         onTranscription(text.trim());
       }
     }
+    // On native, we don't prompt here - the parent component has the text input modal
   };
 
   const ringScale = ringAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.5] });
