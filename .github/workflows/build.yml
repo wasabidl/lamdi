@@ -6,19 +6,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-name: Build Debug APK
-on: [push, workflow_dispatch]
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 18 # Using Node 18 for better stability with older Expo
           cache: 'npm'
           cache-dependency-path: frontend/package.json
 
@@ -32,59 +24,27 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # We are moving down to 8.3 for maximum compatibility with Expo
+      # STEP 1: Delete the potentially broken android folder from the ZIP
+      - name: Clean Old Android Files
+        run: rm -rf android
+        working-directory: frontend
+
+      # STEP 2: Let Expo generate a fresh, working android folder
+      - name: Expo Prebuild
+        run: npx expo prebuild --platform android --no-install
+        working-directory: frontend
+
+      # STEP 3: Setup the build tool (Gradle 8.6 is the most stable for this)
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: 8.3
-
-      - name: Force Generate Wrapper
-        run: gradle wrapper --gradle-version 8.3
-        working-directory: frontend/android
+          gradle-version: 8.6
 
       - name: Build APK
-        # We add --no-daemon to save memory on the build machine
+        # We use the new gradlew created by the 'prebuild' command
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
-        working-directory: frontend/android
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: my-app-apk
-          path: "**/build/outputs/apk/debug/*.apk"
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-          cache-dependency-path: frontend/package.json
-
-      - name: Install Dependencies
-        run: npm install
-        working-directory: frontend
-
-      - name: set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      # FIX: We force the machine to use Gradle 8.8 instead of 9.4
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: 8.8
-
-      # This creates the missing wrapper files correctly using version 8.8
-      - name: Force Generate Wrapper
-        run: gradle wrapper --gradle-version 8.8
-        working-directory: frontend/android
-
-      - name: Build APK
-        # We go back to using ./gradlew now that the wrapper is fixed
-        run: chmod +x gradlew && ./gradlew assembleDebug
         working-directory: frontend/android
 
       - name: Upload APK
