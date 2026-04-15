@@ -1,18 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   Animated,
   Platform,
   ActivityIndicator,
+  KeyboardAvoidingView,
 } from 'react-native';
-import { useAudioRecorder, AudioModule, RecordingPresets } from 'expo-audio';
-import * as FileSystem from 'expo-file-system';
-import { Mic, Square } from 'lucide-react-native';
-import { transcribeAudio } from '../services/api';
+import { Mic, Send } from 'lucide-react-native';
 
 interface VoiceRecorderProps {
   onTranscription: (text: string) => void;
@@ -20,198 +18,141 @@ interface VoiceRecorderProps {
 }
 
 export default function VoiceRecorder({ onTranscription, isProcessing }: VoiceRecorderProps) {
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-  const [isRecording, setIsRecording] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [duration, setDuration] = useState(0);
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const ringAnim = useRef(new Animated.Value(0)).current;
+  const [text, setText] = useState('');
+  const [expanded, setExpanded] = useState(false);
 
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isRecording) {
-      interval = setInterval(() => setDuration((d) => d + 1), 1000);
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.15, duration: 600, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
-        ])
-      ).start();
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(ringAnim, { toValue: 1, duration: 1200, useNativeDriver: true }),
-          Animated.timing(ringAnim, { toValue: 0, duration: 0, useNativeDriver: true }),
-        ])
-      ).start();
-    } else {
-      setDuration(0);
-      pulseAnim.setValue(1);
-      ringAnim.setValue(0);
-    }
-    return () => clearInterval(interval);
-  }, [isRecording]);
-
-  const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
-
-  const startRecording = async () => {
-    try {
-      const status = await AudioModule.requestRecordingPermissionsAsync();
-      if (!status.granted) {
-        Alert.alert('Permission Needed', 'Microphone access is required to record voice notes.');
-        return;
-      }
-      await recorder.prepareToRecordAsync();
-      recorder.record();
-      setIsRecording(true);
-    } catch (err) {
-      console.error('Recording error:', err);
-      // Fallback to text prompt on web
-      promptTextFallback();
+  const handleSend = () => {
+    const trimmed = text.trim();
+    if (trimmed) {
+      onTranscription(trimmed);
+      setText('');
+      setExpanded(false);
     }
   };
 
-  const stopRecording = async () => {
-    if (!isRecording) return;
-    try {
-      await recorder.stop();
-      setIsRecording(false);
-
-      const uri = recorder.uri;
-      if (uri) {
-        // Native device: read audio file as base64 and send to Whisper
-        setIsTranscribing(true);
-        try {
-          const base64 = await FileSystem.readAsStringAsync(uri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-          
-          // Check we actually got audio data
-          if (!base64 || base64.length < 100) {
-            Alert.alert('Recording issue', 'Audio was too short or empty. Please try again and speak clearly.');
-            return;
-          }
-
-          const ext = uri.split('.').pop() || 'm4a';
-          const result = await transcribeAudio(base64, ext);
-          if (result.success && result.text && result.text.trim()) {
-            onTranscription(result.text.trim());
-          } else {
-            Alert.alert('No speech detected', 'Could not detect any speech in the recording. Please try again.');
-          }
-        } catch (err: any) {
-          console.error('Whisper transcription error:', err);
-          // Offer text fallback if Whisper fails
-          if (Platform.OS === 'ios' || Platform.OS === 'android') {
-            Alert.alert(
-              'Transcription issue',
-              'Voice could not be transcribed. Would you like to type your task instead?',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Type it', onPress: () => promptTextFallback() },
-              ]
-            );
-          }
-        } finally {
-          setIsTranscribing(false);
-        }
-      } else if (Platform.OS === 'web') {
-        // Web: prompt for text since we can't access the audio file
-        promptTextFallback();
-      } else {
-        Alert.alert('Recording Error', 'Could not access the recorded audio. Please try again.');
-      }
-    } catch (err) {
-      console.error('Stop recording error:', err);
-      setIsRecording(false);
-      promptTextFallback();
-    }
-  };
-
-  const promptTextFallback = () => {
-    if (Platform.OS === 'web') {
-      const text = window.prompt('Type your task (voice recording not available in web preview):');
-      if (text && text.trim()) {
-        onTranscription(text.trim());
-      }
-    }
-    // On native, we don't prompt here - the parent component has the text input modal
-  };
-
-  const ringScale = ringAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.5] });
-  const ringOpacity = ringAnim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.4, 0.15, 0] });
-
-  const busy = isProcessing || isTranscribing;
-
-  if (busy) {
+  if (isProcessing) {
     return (
       <View style={styles.container} testID="voice-recorder">
         <View style={styles.busyWrap}>
           <ActivityIndicator size="large" color="#4A6B53" />
-          <Text style={styles.busyText}>
-            {isTranscribing ? 'Transcribing your voice...' : 'Processing your task...'}
-          </Text>
+          <Text style={styles.busyText}>Lamdi is thinking...</Text>
         </View>
       </View>
     );
   }
 
-  return (
-    <View style={styles.container} testID="voice-recorder">
-      {isRecording && (
-        <View style={styles.durationRow}>
-          <View style={styles.liveDot} />
-          <Text style={styles.durationText}>Recording {fmt(duration)}</Text>
-        </View>
-      )}
+  if (!expanded) {
+    return (
+      <View style={styles.container} testID="voice-recorder">
+        <TouchableOpacity
+          testID="voice-record-button"
+          style={styles.fab}
+          onPress={() => setExpanded(true)}
+          activeOpacity={0.8}
+          accessible
+          accessibilityLabel="Add voice or text task"
+          accessibilityRole="button"
+        >
+          <Mic size={36} color="#FFFFFF" />
+        </TouchableOpacity>
+        <Text style={styles.hint}>Tap to add a task</Text>
+        <Text style={styles.subhint}>Speak naturally in any language</Text>
+      </View>
+    );
+  }
 
-      <View style={styles.fabWrapper}>
-        {isRecording && (
-          <Animated.View
-            style={[styles.ring, { transform: [{ scale: ringScale }], opacity: ringOpacity }]}
-          />
-        )}
-        <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-          <TouchableOpacity
-            testID="voice-record-button"
-            style={[styles.fab, isRecording && styles.fabRecording]}
-            onPress={isRecording ? stopRecording : startRecording}
-            activeOpacity={0.8}
-            accessible
-            accessibilityLabel={isRecording ? 'Stop recording' : 'Start recording'}
-            accessibilityRole="button"
-          >
-            {isRecording ? (
-              <Square size={28} color="#FFFFFF" fill="#FFFFFF" />
-            ) : (
-              <Mic size={36} color="#FFFFFF" />
-            )}
-          </TouchableOpacity>
-        </Animated.View>
+  return (
+    <View style={styles.expandedContainer} testID="voice-recorder-expanded">
+      <Text style={styles.expandedTitle}>What do you need to do?</Text>
+      <Text style={styles.expandedSub}>
+        Say it naturally — create tasks, mark done, change deadlines
+      </Text>
+
+      <View style={styles.inputRow}>
+        <TextInput
+          testID="voice-text-input"
+          style={styles.input}
+          value={text}
+          onChangeText={setText}
+          placeholder='e.g. "I finished calling Nguyen" or "Buy rice tomorrow"'
+          placeholderTextColor="#B8C4B9"
+          multiline
+          autoFocus
+          textAlignVertical="top"
+          returnKeyType="send"
+          blurOnSubmit={false}
+          onSubmitEditing={handleSend}
+        />
       </View>
 
-      <Text style={styles.hint}>{isRecording ? 'Tap to stop & transcribe' : 'Tap to speak'}</Text>
-      {!isRecording && (
-        <Text style={styles.subhint}>Voice is transcribed by AI (Whisper)</Text>
-      )}
+      <View style={styles.examplesRow}>
+        <Text style={styles.exLabel}>Try:</Text>
+        <TouchableOpacity onPress={() => setText('I finished the inventory check')}>
+          <Text style={styles.exChip}>Mark done</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setText('Move bank call to Friday')}>
+          <Text style={styles.exChip}>Change date</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setText('Call supplier tomorrow, urgent')}>
+          <Text style={styles.exChip}>New task</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.actionRow}>
+        <TouchableOpacity
+          testID="cancel-voice-input"
+          style={styles.cancelBtn}
+          onPress={() => { setText(''); setExpanded(false); }}
+        >
+          <Text style={styles.cancelText}>Cancel</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          testID="send-voice-input"
+          style={[styles.sendBtn, !text.trim() && styles.sendBtnDisabled]}
+          onPress={handleSend}
+          disabled={!text.trim()}
+          activeOpacity={0.8}
+        >
+          <Send size={18} color="#FFFFFF" />
+          <Text style={styles.sendText}>Send to Lamdi</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { alignItems: 'center', paddingVertical: 16 },
-  durationRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  liveDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#D35F5F', marginRight: 8 },
-  durationText: { color: '#D35F5F', fontSize: 15, fontWeight: '600' },
-  fabWrapper: { alignItems: 'center', justifyContent: 'center', width: 100, height: 100, marginBottom: 8 },
-  ring: { position: 'absolute', width: 80, height: 80, borderRadius: 40, backgroundColor: '#D48C70' },
   fab: {
     width: 80, height: 80, borderRadius: 40, backgroundColor: '#D48C70',
     justifyContent: 'center', alignItems: 'center',
     shadowColor: '#D48C70', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.35, shadowRadius: 16, elevation: 10,
+    marginBottom: 8,
   },
-  fabRecording: { backgroundColor: '#D35F5F', shadowColor: '#D35F5F' },
-  hint: { color: '#5C6A5D', fontSize: 13 },
-  subhint: { color: '#B8C4B9', fontSize: 11, marginTop: 4 },
+  hint: { color: '#5C6A5D', fontSize: 14, fontWeight: '500' },
+  subhint: { color: '#B8C4B9', fontSize: 12, marginTop: 4 },
   busyWrap: { alignItems: 'center', padding: 24 },
   busyText: { color: '#4A6B53', fontSize: 15, fontWeight: '600', marginTop: 12 },
+
+  expandedContainer: { paddingVertical: 8 },
+  expandedTitle: { fontSize: 17, fontWeight: '700', color: '#2D372E', marginBottom: 4 },
+  expandedSub: { fontSize: 13, color: '#5C6A5D', marginBottom: 14, lineHeight: 18 },
+  inputRow: { marginBottom: 10 },
+  input: {
+    backgroundColor: '#F9F9F6', borderRadius: 14, padding: 14, fontSize: 15,
+    color: '#2D372E', borderWidth: 1, borderColor: '#E8EBE8', minHeight: 80,
+  },
+  examplesRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' },
+  exLabel: { fontSize: 12, color: '#5C6A5D', fontWeight: '600' },
+  exChip: { fontSize: 12, color: '#D48C70', backgroundColor: '#FAEFEA', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, overflow: 'hidden' },
+  actionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
+  cancelBtn: { paddingVertical: 12, paddingHorizontal: 16 },
+  cancelText: { color: '#5C6A5D', fontSize: 14, fontWeight: '500' },
+  sendBtn: {
+    flex: 1, flexDirection: 'row', backgroundColor: '#4A6B53', borderRadius: 14,
+    padding: 14, alignItems: 'center', justifyContent: 'center', gap: 8,
+  },
+  sendBtnDisabled: { backgroundColor: '#B8C4B9' },
+  sendText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
 });

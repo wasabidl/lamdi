@@ -7,12 +7,11 @@ import {
   Modal,
   ScrollView,
 } from 'react-native';
-import { X, Sparkles, Check, Pencil, Lightbulb, Folder, Calendar } from 'lucide-react-native';
-import { TaskExtractionResponse } from '../types';
+import { X, Sparkles, Check, Pencil, Lightbulb, Folder, Calendar, CheckCircle, RefreshCw } from 'lucide-react-native';
 
 interface ExtractionResultModalProps {
   visible: boolean;
-  result: TaskExtractionResponse | null;
+  result: any | null;
   onClose: () => void;
   onEditTask: (taskId: string) => void;
 }
@@ -27,8 +26,13 @@ const priorityColors: Record<string, { bg: string; text: string }> = {
 export default function ExtractionResultModal({ visible, result, onClose, onEditTask }: ExtractionResultModalProps) {
   if (!result) return null;
 
-  const pct = Math.round(result.confidence * 100);
+  const pct = Math.round((result.confidence || 0.5) * 100);
   const confColor = pct >= 80 ? '#3E7D5F' : pct >= 60 ? '#C7823B' : '#D35F5F';
+  const intent = result.intent || 'create';
+  const createdTasks = result.created_tasks || result.tasks || [];
+  const updatedTasks = result.updated_tasks || [];
+  const hasCreates = createdTasks.length > 0;
+  const hasUpdates = updatedTasks.length > 0;
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -39,7 +43,9 @@ export default function ExtractionResultModal({ visible, result, onClose, onEdit
           <View style={styles.header}>
             <View style={styles.headerLeft}>
               <Sparkles size={22} color="#D48C70" />
-              <Text style={styles.title}>Tasks Created</Text>
+              <Text style={styles.title}>
+                {intent === 'update' ? 'Tasks Updated' : intent === 'mixed' ? 'Tasks Processed' : 'Tasks Created'}
+              </Text>
             </View>
             <TouchableOpacity testID="close-extraction-modal" onPress={onClose} style={styles.closeBtn}>
               <X size={22} color="#5C6A5D" />
@@ -47,10 +53,19 @@ export default function ExtractionResultModal({ visible, result, onClose, onEdit
           </View>
 
           <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={styles.statVal}>{result.tasks.length}</Text>
-              <Text style={styles.statLabel}>Tasks</Text>
-            </View>
+            {hasCreates && (
+              <View style={styles.statItem}>
+                <Text style={styles.statVal}>{createdTasks.length}</Text>
+                <Text style={styles.statLabel}>Created</Text>
+              </View>
+            )}
+            {hasCreates && hasUpdates && <View style={styles.divider} />}
+            {hasUpdates && (
+              <View style={styles.statItem}>
+                <Text style={[styles.statVal, { color: '#3E7D5F' }]}>{updatedTasks.length}</Text>
+                <Text style={styles.statLabel}>Updated</Text>
+              </View>
+            )}
             <View style={styles.divider} />
             <View style={styles.statItem}>
               <Text style={[styles.statVal, { color: confColor }]}>{pct}%</Text>
@@ -58,7 +73,7 @@ export default function ExtractionResultModal({ visible, result, onClose, onEdit
             </View>
             <View style={styles.divider} />
             <View style={styles.statItem}>
-              <Text style={styles.statVal}>{result.language_detected.toUpperCase()}</Text>
+              <Text style={styles.statVal}>{(result.language_detected || '?').toUpperCase()}</Text>
               <Text style={styles.statLabel}>Language</Text>
             </View>
           </View>
@@ -69,10 +84,42 @@ export default function ExtractionResultModal({ visible, result, onClose, onEdit
           </View>
 
           <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
-            {result.tasks.map((task, i) => {
+            {/* Task Updates */}
+            {updatedTasks.map((update: any, i: number) => (
+              <View key={`update-${i}`} style={styles.updateItem}>
+                <View style={styles.updateHeader}>
+                  <CheckCircle size={20} color="#3E7D5F" />
+                  <Text style={styles.updateTitle} numberOfLines={1}>{update.task_title}</Text>
+                </View>
+                <View style={styles.updateChanges}>
+                  {update.changes?.status === 'completed' && (
+                    <View style={styles.changeBadge}>
+                      <CheckCircle size={12} color="#3E7D5F" />
+                      <Text style={styles.changeGreen}>Marked as done</Text>
+                    </View>
+                  )}
+                  {update.changes?.due_date && (
+                    <View style={styles.changeBadge}>
+                      <Calendar size={12} color="#C7823B" />
+                      <Text style={styles.changeOrange}>Moved to {update.changes.due_date}</Text>
+                    </View>
+                  )}
+                  {update.changes?.priority && (
+                    <View style={styles.changeBadge}>
+                      <RefreshCw size={12} color="#4A6B53" />
+                      <Text style={styles.changeGreen}>Priority → {update.changes.priority}</Text>
+                    </View>
+                  )}
+                </View>
+                {update.reason && <Text style={styles.updateReason}>{update.reason}</Text>}
+              </View>
+            ))}
+
+            {/* New Tasks */}
+            {createdTasks.map((task: any, i: number) => {
               const pc = priorityColors[task.priority] || priorityColors.medium;
               return (
-                <TouchableOpacity key={task.id} testID={`extraction-task-${i}`} style={styles.taskItem} onPress={() => onEditTask(task.id)} activeOpacity={0.7}>
+                <TouchableOpacity key={task.id || i} testID={`extraction-task-${i}`} style={styles.taskItem} onPress={() => onEditTask(task.id)} activeOpacity={0.7}>
                   <View style={styles.taskHead}>
                     <View style={styles.num}><Text style={styles.numText}>{i + 1}</Text></View>
                     <Text style={styles.taskTitle} numberOfLines={2}>{task.title}</Text>
@@ -99,7 +146,9 @@ export default function ExtractionResultModal({ visible, result, onClose, onEdit
           </ScrollView>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Corrections help Lamdi learn your preferences!</Text>
+            <Text style={styles.footerText}>
+              {hasUpdates ? 'Lamdi matched your message to existing tasks!' : 'Corrections help Lamdi learn your preferences!'}
+            </Text>
           </View>
 
           <TouchableOpacity testID="extraction-done-button" style={styles.doneBtn} onPress={onClose} activeOpacity={0.8}>
@@ -127,7 +176,19 @@ const styles = StyleSheet.create({
   divider: { width: 1, backgroundColor: '#E8EBE8', marginHorizontal: 8 },
   interp: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#E3EAE4', borderRadius: 12, padding: 12, marginBottom: 16, gap: 8 },
   interpText: { flex: 1, fontSize: 13, color: '#2D372E', lineHeight: 18 },
-  list: { maxHeight: 280 },
+  list: { maxHeight: 300 },
+
+  // Update items
+  updateItem: { backgroundColor: '#DDF0E6', borderRadius: 14, padding: 16, marginBottom: 10 },
+  updateHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  updateTitle: { flex: 1, fontSize: 15, fontWeight: '600', color: '#2D372E' },
+  updateChanges: { gap: 6, marginLeft: 28 },
+  changeBadge: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  changeGreen: { fontSize: 13, color: '#3E7D5F', fontWeight: '600' },
+  changeOrange: { fontSize: 13, color: '#C7823B', fontWeight: '600' },
+  updateReason: { fontSize: 12, color: '#5C6A5D', marginTop: 6, marginLeft: 28, fontStyle: 'italic' },
+
+  // Task items
   taskItem: { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: '#E8EBE8' },
   taskHead: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
   num: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#4A6B53', justifyContent: 'center', alignItems: 'center', marginRight: 10 },

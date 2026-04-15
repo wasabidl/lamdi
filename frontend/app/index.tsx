@@ -12,14 +12,13 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
-import { Type, CheckSquare, ListFilter } from 'lucide-react-native';
+import { CheckSquare, ListFilter } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useTaskStore } from '../src/stores/taskStore';
 import TaskCard from '../src/components/TaskCard';
 import VoiceRecorder from '../src/components/VoiceRecorder';
-import TextInputModal from '../src/components/TextInputModal';
 import ExtractionResultModal from '../src/components/ExtractionResultModal';
-import { Task, TaskExtractionResponse } from '../src/types';
+import { Task } from '../src/types';
 import { scheduleTaskReminder, cancelTaskReminder } from '../src/services/notifications';
 
 type FilterType = 'all' | 'pending' | 'completed';
@@ -33,9 +32,8 @@ export default function HomeScreen() {
 
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<FilterType>('all');
-  const [showTextInput, setShowTextInput] = useState(false);
   const [showExtractionResult, setShowExtractionResult] = useState(false);
-  const [extractionResult, setExtractionResult] = useState<TaskExtractionResponse | null>(null);
+  const [extractionResult, setExtractionResult] = useState<any>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => { fetchTasks(); fetchStats(); }, []);
@@ -54,30 +52,17 @@ export default function HomeScreen() {
       setExtractionResult(result);
       setShowExtractionResult(true);
       fetchStats();
-      // Auto-schedule reminders for new tasks based on priority
-      for (const task of result.tasks) {
+      // Auto-schedule reminders for newly created tasks
+      const created = result.created_tasks || result.tasks || [];
+      for (const task of created) {
         const interval = task.priority === 'urgent' ? 30 : task.priority === 'high' ? 120 : 240;
         scheduleTaskReminder(task.id, task.title, task.priority, interval).catch(() => {});
       }
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to process voice input');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleTextSubmit = async (text: string, languageHint?: string) => {
-    setShowTextInput(false);
-    setIsProcessing(true);
-    try {
-      const result = await processVoiceInput(text, languageHint);
-      setExtractionResult(result);
-      setShowExtractionResult(true);
-      fetchStats();
-      // Auto-schedule reminders for new tasks based on priority
-      for (const task of result.tasks) {
-        const interval = task.priority === 'urgent' ? 30 : task.priority === 'high' ? 120 : 240;
-        scheduleTaskReminder(task.id, task.title, task.priority, interval).catch(() => {});
+      // Cancel reminders for completed tasks
+      for (const update of (result.updated_tasks || [])) {
+        if (update.changes?.status === 'completed') {
+          cancelTaskReminder(update.task_id).catch(() => {});
+        }
       }
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to process input');
@@ -150,10 +135,6 @@ export default function HomeScreen() {
       {/* Voice + text input */}
       <View style={styles.inputCard}>
         <VoiceRecorder onTranscription={handleVoiceTranscription} isProcessing={isProcessing} />
-        <TouchableOpacity testID="open-text-input" style={styles.typeBtn} onPress={() => setShowTextInput(true)} activeOpacity={0.7}>
-          <Type size={18} color="#4A6B53" />
-          <Text style={styles.typeBtnText}>Or type your task</Text>
-        </TouchableOpacity>
       </View>
 
       {/* Filters */}
@@ -233,13 +214,6 @@ export default function HomeScreen() {
         </View>
       )}
 
-      <TextInputModal
-        visible={showTextInput}
-        onClose={() => setShowTextInput(false)}
-        onSubmit={handleTextSubmit}
-        isLoading={isProcessing}
-      />
-
       <ExtractionResultModal
         visible={showExtractionResult}
         result={extractionResult}
@@ -265,8 +239,6 @@ const styles = StyleSheet.create({
   statLbl: { fontSize: 11, color: '#5C6A5D', marginTop: 2 },
 
   inputCard: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: '#E8EBE8' },
-  typeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, gap: 8 },
-  typeBtnText: { color: '#4A6B53', fontSize: 14, fontWeight: '500' },
 
   filterRow: { flexDirection: 'row', marginBottom: 16, gap: 8 },
   filterChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 24, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E8EBE8', gap: 6 },

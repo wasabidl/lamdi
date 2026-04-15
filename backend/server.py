@@ -111,6 +111,114 @@ class TaskExtractionResponse(BaseModel):
 
 # ============== LLM Helper ==============
 
+def parse_llm_json(response_text: str) -> dict:
+    """Parse JSON from LLM response, stripping markdown fences"""
+    text = response_text.strip()
+    if text.startswith("```json"):
+        text = text[7:]
+    if text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    return json.loads(text.strip())
+
+async def analyze_input_intent(text: str, existing_tasks: List[Dict]) -> Dict[str, Any]:
+    """Analyze whether user input is about creating new tasks or updating existing ones"""
+    
+    # Build existing tasks context
+    tasks_ctx = ""
+    for t in existing_tasks:
+        tasks_ctx += f"- ID: {t['id']} | Title: {t['title']} | Status: {t['status']} | Priority: {t['priority']} | Due: {t.get('due_date', 'none')}\n"
+    
+    # Get learned patterns
+    patterns = await db.learning_patterns.find().to_list(100)
+    patterns_ctx = ""
+    if patterns:
+        patterns_ctx = "\nLEARNED USER PREFERENCES:\n"
+        for p in patterns:
+            patterns_ctx += f"- '{p['trigger_phrase']}' → {p['pattern_type']}: {p['extracted_value']}\n"
+    
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    
+    system_message = f"""You are Lamdi, an AI operations manager. You understand English, Czech, and Vietnamese (including code-switching).
+
+Today's date: {today}
+
+EXISTING TASKS:
+{tasks_ctx or "No existing tasks."}
+{patterns_ctx}
+
+ANALYZE the user's input and determine the INTENT:
+
+1. **CREATE** - User wants to create NEW task(s)
+2. **UPDATE** - User is reporting progress, completion, or deadline changes for EXISTING tasks
+3. **MIXED** - Some new tasks AND some updates
+
+For UPDATES, match the input to existing tasks by meaning (not exact words).
+Examples:
+- "I called the supplier" → marks "Call supplier" task as completed
+- "Done with inventory" → marks inventory-related task as completed
+- "Move the bank call to Friday" → updates due_date of bank-related task
+- "Hotovo s dodavatelem" (Czech: done with supplier) → completes supplier task
+- "Đã gọi nhà cung cấp" (Vietnamese: already called supplier) → completes supplier task
+
+OUTPUT FORMAT (JSON):
+{{
+    "intent": "create|update|mixed",
+    "new_tasks": [
+        {{
+            "title": "Task title",
+            "description": "Details",
+            "priority": "low|medium|high|urgent",
+            "due_date": "YYYY-MM-DD or null",
+            "category": "category or null",
+            "tags": ["tags"]
+        }}
+    ],
+    "task_updates": [
+        {{
+            "task_id": "id of existing task to update",
+            "task_title": "title of matched task",
+            "changes": {{
+                "status": "completed|pending|in_progress|cancelled or null",
+                "due_date": "YYYY-MM-DD or null",
+                "priority": "low|medium|high|urgent or null"
+            }},
+            "reason": "Brief explanation of why this update was matched"
+        }}
+    ],
+    "raw_interpretation": "What you understood from the input",
+    "language_detected": "en|cs|vi|mixed",
+    "confidence": 0.0-1.0
+}}
+
+Only include fields that actually change. Respond with valid JSON only."""
+
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"intent-{uuid.uuid4()}",
+        system_message=system_message
+    ).with_model("openai", "gpt-4o")
+    
+    try:
+        response = await chat.send_message(UserMessage(text=f"User says: {text}"))
+        logger.info(f"Intent analysis response: {response}")
+        return parse_llm_json(response)
+    except json.JSONDecodeError as e:
+        logger.error(f"Intent JSON parse error: {e}")
+        # Fallback: treat as new task creation
+        return {
+            "intent": "create",
+            "new_tasks": [{"title": text[:100], "description": "", "priority": "medium", "due_date": None, "category": None, "tags": []}],
+            "task_updates": [],
+            "raw_interpretation": text,
+            "language_detected": "unknown",
+            "confidence": 0.5
+        }
+    except Exception as e:
+        logger.error(f"Intent analysis error: {e}")
+        raise HTTPException(status_code=500, detail=f"AI processing error: {str(e)}")
+
 async def extract_tasks_from_input(text: str, language_hint: Optional[str] = None) -> Dict[str, Any]:
     """Use LLM to extract structured tasks from unstructured voice/text input"""
     
@@ -381,9 +489,17 @@ async def transcribe_audio_base64(
             pass
         raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
 
-@api_router.post("/process-input", response_model=TaskExtractionResponse)
+class SmartProcessResponse(BaseModel):
+    intent: str  # create, update, mixed
+    created_tasks: List[Task] = []
+    updated_tasks: List[Dict[str, Any]] = []
+    raw_interpretation: str
+    language_detected: str
+    confidence: float
+
+@api_router.post("/process-input")
 async def process_voice_input(request: VoiceInputRequest):
-    """Process voice/text input and extract tasks"""
+    """Smart processing: creates NEW tasks OR updates EXISTING ones based on intent"""
     
     text_to_process = request.text
     
@@ -417,15 +533,21 @@ async def process_voice_input(request: VoiceInputRequest):
     if not text_to_process:
         raise HTTPException(status_code=400, detail="No input provided")
     
-    # Extract tasks using LLM
-    extraction_result = await extract_tasks_from_input(
-        text_to_process, 
-        request.language_hint
-    )
+    # Get existing non-completed tasks for context
+    existing_tasks = await db.tasks.find(
+        {"status": {"$nin": ["completed", "cancelled"]}},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(50)
     
-    # Create tasks in database
+    # Smart intent analysis
+    analysis = await analyze_input_intent(text_to_process, existing_tasks)
+    
+    intent = analysis.get("intent", "create")
     created_tasks = []
-    for task_data in extraction_result.get("tasks", []):
+    updated_tasks = []
+    
+    # Handle new task creation
+    for task_data in analysis.get("new_tasks", []):
         task = Task(
             title=task_data.get("title", "Untitled Task"),
             description=task_data.get("description", ""),
@@ -434,17 +556,55 @@ async def process_voice_input(request: VoiceInputRequest):
             category=task_data.get("category"),
             tags=task_data.get("tags", []),
             original_input=text_to_process,
-            language_detected=extraction_result.get("language_detected", "unknown")
+            language_detected=analysis.get("language_detected", "unknown")
         )
         await db.tasks.insert_one(task.dict())
         created_tasks.append(task)
     
-    return TaskExtractionResponse(
-        tasks=created_tasks,
-        raw_interpretation=extraction_result.get("raw_interpretation", ""),
-        language_detected=extraction_result.get("language_detected", "unknown"),
-        confidence=extraction_result.get("confidence", 0.5)
-    )
+    # Handle task updates (completion, deadline changes, etc.)
+    for update_data in analysis.get("task_updates", []):
+        task_id = update_data.get("task_id")
+        changes = update_data.get("changes", {})
+        reason = update_data.get("reason", "")
+        
+        if not task_id or not changes:
+            continue
+        
+        # Verify task exists
+        existing = await db.tasks.find_one({"id": task_id})
+        if not existing:
+            continue
+        
+        update_fields = {"updated_at": datetime.utcnow()}
+        for field, value in changes.items():
+            if value is not None:
+                update_fields[field] = value
+        
+        if changes.get("status") == "completed":
+            update_fields["completed_at"] = datetime.utcnow()
+            # Disable reminder on completion
+            await db.reminders.update_one(
+                {"task_id": task_id},
+                {"$set": {"enabled": False}}
+            )
+        
+        await db.tasks.update_one({"id": task_id}, {"$set": update_fields})
+        updated_tasks.append({
+            "task_id": task_id,
+            "task_title": update_data.get("task_title", existing.get("title", "")),
+            "changes": changes,
+            "reason": reason
+        })
+    
+    return {
+        "intent": intent,
+        "created_tasks": [t.dict() for t in created_tasks],
+        "updated_tasks": updated_tasks,
+        "raw_interpretation": analysis.get("raw_interpretation", ""),
+        "language_detected": analysis.get("language_detected", "unknown"),
+        "confidence": analysis.get("confidence", 0.5),
+        "tasks": [t.dict() for t in created_tasks],  # backward compat
+    }
 
 # ----- Corrections & Learning -----
 

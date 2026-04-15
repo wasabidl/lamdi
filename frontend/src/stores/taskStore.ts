@@ -93,11 +93,35 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const result = await api.processInput({ text, language_hint: languageHint });
-      set((state) => ({
-        tasks: [...result.tasks, ...state.tasks],
-        lastExtraction: result,
-        isLoading: false,
-      }));
+      
+      // Handle the smart response - may contain created_tasks and updated_tasks
+      const createdTasks = result.created_tasks || result.tasks || [];
+      
+      set((state) => {
+        let updatedList = [...state.tasks];
+        
+        // Add newly created tasks
+        for (const t of createdTasks) {
+          if (!updatedList.find((e) => e.id === t.id)) {
+            updatedList.unshift(t);
+          }
+        }
+        
+        // Apply task updates (completions, deadline changes)
+        for (const update of (result.updated_tasks || [])) {
+          const idx = updatedList.findIndex((t) => t.id === update.task_id);
+          if (idx >= 0) {
+            const changes = update.changes || {};
+            updatedList[idx] = { ...updatedList[idx], ...changes };
+          }
+        }
+        
+        return {
+          tasks: updatedList,
+          lastExtraction: result,
+          isLoading: false,
+        };
+      });
       return result;
     } catch (error: any) {
       set({ error: error.message || 'Failed to process input', isLoading: false });
