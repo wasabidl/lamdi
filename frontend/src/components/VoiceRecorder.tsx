@@ -16,7 +16,7 @@ let NativeSpeech: any = null;
 let useNativeSpeechEvent: ((name: string, cb: any) => void) | null = null;
 
 try {
-  const mod = require('@jamsch/expo-speech-recognition');
+  const mod = require('expo-speech-recognition');
   NativeSpeech = mod.ExpoSpeechRecognitionModule;
   useNativeSpeechEvent = mod.useSpeechRecognitionEvent;
 } catch {
