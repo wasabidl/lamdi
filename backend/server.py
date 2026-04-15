@@ -8,10 +8,13 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import base64
+import tempfile
+import aiofiles
 from emergentintegrations.llm.chat import LlmChat, UserMessage
+from emergentintegrations.llm.openai import OpenAISpeechToText
 import asyncio
 
 ROOT_DIR = Path(__file__).parent
@@ -270,21 +273,146 @@ async def delete_task(task_id: str):
 
 # ----- Voice/Text Processing -----
 
+@api_router.post("/transcribe")
+async def transcribe_audio(
+    audio: UploadFile = File(...),
+    language_hint: Optional[str] = Form(None)
+):
+    """Transcribe audio file using OpenAI Whisper"""
+    # Validate file type
+    allowed_types = ['audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/webm', 'audio/x-m4a',
+                     'audio/ogg', 'audio/mp3', 'video/mp4', 'application/octet-stream']
+    
+    # Save to temp file
+    suffix = '.wav'
+    if audio.filename:
+        suffix = '.' + audio.filename.rsplit('.', 1)[-1] if '.' in audio.filename else '.wav'
+    
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            content = await audio.read()
+            if len(content) > 25 * 1024 * 1024:
+                raise HTTPException(status_code=400, detail="Audio file too large (max 25MB)")
+            tmp.write(content)
+            tmp_path = tmp.name
+        
+        stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
+        
+        with open(tmp_path, "rb") as audio_file:
+            kwargs = {
+                "file": audio_file,
+                "model": "whisper-1",
+                "response_format": "json",
+            }
+            if language_hint and language_hint in ['en', 'cs', 'vi']:
+                kwargs["language"] = language_hint
+            
+            response = await stt.transcribe(**kwargs)
+        
+        transcribed_text = response.text if hasattr(response, 'text') else str(response)
+        logger.info(f"Whisper transcription: {transcribed_text}")
+        
+        # Clean up temp file
+        os.unlink(tmp_path)
+        
+        return {
+            "text": transcribed_text,
+            "language_hint": language_hint,
+            "success": True
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Whisper transcription error: {e}")
+        # Clean up temp file on error
+        try:
+            os.unlink(tmp_path)
+        except:
+            pass
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+
+@api_router.post("/transcribe-base64")
+async def transcribe_audio_base64(
+    audio_base64: str = Form(...),
+    file_extension: str = Form(default="m4a"),
+    language_hint: Optional[str] = Form(None)
+):
+    """Transcribe base64-encoded audio using OpenAI Whisper"""
+    try:
+        audio_bytes = base64.b64decode(audio_base64)
+        if len(audio_bytes) > 25 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Audio file too large (max 25MB)")
+        
+        suffix = f'.{file_extension}'
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(audio_bytes)
+            tmp_path = tmp.name
+        
+        stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
+        
+        with open(tmp_path, "rb") as audio_file:
+            kwargs = {
+                "file": audio_file,
+                "model": "whisper-1",
+                "response_format": "json",
+            }
+            if language_hint and language_hint in ['en', 'cs', 'vi']:
+                kwargs["language"] = language_hint
+            
+            response = await stt.transcribe(**kwargs)
+        
+        transcribed_text = response.text if hasattr(response, 'text') else str(response)
+        logger.info(f"Whisper transcription (base64): {transcribed_text}")
+        
+        os.unlink(tmp_path)
+        
+        return {
+            "text": transcribed_text,
+            "language_hint": language_hint,
+            "success": True
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Whisper base64 transcription error: {e}")
+        try:
+            os.unlink(tmp_path)
+        except:
+            pass
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+
 @api_router.post("/process-input", response_model=TaskExtractionResponse)
 async def process_voice_input(request: VoiceInputRequest):
     """Process voice/text input and extract tasks"""
     
     text_to_process = request.text
     
-    # If audio is provided, we'd transcribe it here
-    # For MVP, we'll use the text directly or assume client-side transcription
+    # If audio is provided, transcribe it using Whisper
     if request.audio_base64 and not text_to_process:
-        # In production, we'd use Whisper or similar for transcription
-        # For now, return an error if only audio without text
-        raise HTTPException(
-            status_code=400, 
-            detail="Audio-only processing not yet supported. Please include text transcription."
-        )
+        try:
+            audio_bytes = base64.b64decode(request.audio_base64)
+            suffix = '.m4a'
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(audio_bytes)
+                tmp_path = tmp.name
+            
+            stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
+            with open(tmp_path, "rb") as audio_file:
+                kwargs = {"file": audio_file, "model": "whisper-1", "response_format": "json"}
+                if request.language_hint and request.language_hint in ['en', 'cs', 'vi']:
+                    kwargs["language"] = request.language_hint
+                response = await stt.transcribe(**kwargs)
+            
+            text_to_process = response.text if hasattr(response, 'text') else str(response)
+            logger.info(f"Whisper transcription in process-input: {text_to_process}")
+            os.unlink(tmp_path)
+        except Exception as e:
+            logger.error(f"Whisper error in process-input: {e}")
+            try:
+                os.unlink(tmp_path)
+            except:
+                pass
+            raise HTTPException(status_code=500, detail=f"Audio transcription failed: {str(e)}")
     
     if not text_to_process:
         raise HTTPException(status_code=400, detail="No input provided")
@@ -433,6 +561,102 @@ async def delete_learning_pattern(pattern_id: str):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Pattern not found")
     return {"message": "Pattern deleted"}
+
+# ----- Reminders -----
+
+class ReminderConfig(BaseModel):
+    task_id: str
+    interval_minutes: int = 240  # Default 4 hours
+    enabled: bool = True
+
+@api_router.post("/reminders/configure")
+async def configure_reminder(config: ReminderConfig):
+    """Configure persistent reminders for a task"""
+    task = await db.tasks.find_one({"id": config.task_id})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Store reminder config
+    reminder_data = {
+        "id": str(uuid.uuid4()),
+        "task_id": config.task_id,
+        "interval_minutes": config.interval_minutes,
+        "enabled": config.enabled,
+        "last_sent": None,
+        "next_due": datetime.utcnow().isoformat(),
+        "send_count": 0,
+        "created_at": datetime.utcnow(),
+    }
+    
+    # Upsert: update existing or create new
+    await db.reminders.update_one(
+        {"task_id": config.task_id},
+        {"$set": reminder_data},
+        upsert=True
+    )
+    
+    return {"message": "Reminder configured", "interval_minutes": config.interval_minutes}
+
+@api_router.get("/reminders/pending")
+async def get_pending_reminders():
+    """Get all pending reminders (tasks not completed with active reminders)"""
+    now = datetime.utcnow().isoformat()
+    
+    # Get all active reminders
+    reminders = await db.reminders.find({"enabled": True}).to_list(100)
+    
+    pending = []
+    for rem in reminders:
+        task = await db.tasks.find_one({"id": rem["task_id"]})
+        if task and task.get("status") not in ["completed", "cancelled"]:
+            # Check if reminder is due
+            next_due = rem.get("next_due", now)
+            if next_due <= now:
+                pending.append({
+                    "reminder_id": rem.get("id", ""),
+                    "task_id": rem["task_id"],
+                    "task_title": task.get("title", ""),
+                    "task_priority": task.get("priority", "medium"),
+                    "interval_minutes": rem.get("interval_minutes", 240),
+                    "send_count": rem.get("send_count", 0),
+                    "next_due": next_due,
+                })
+    
+    return {"pending_reminders": pending, "count": len(pending)}
+
+@api_router.post("/reminders/acknowledge/{task_id}")
+async def acknowledge_reminder(task_id: str):
+    """Acknowledge a reminder - schedules the next one"""
+    reminder = await db.reminders.find_one({"task_id": task_id})
+    if not reminder:
+        raise HTTPException(status_code=404, detail="No reminder for this task")
+    
+    interval = reminder.get("interval_minutes", 240)
+    next_due = (datetime.utcnow() + timedelta(minutes=interval)).isoformat()
+    
+    await db.reminders.update_one(
+        {"task_id": task_id},
+        {
+            "$set": {
+                "last_sent": datetime.utcnow().isoformat(),
+                "next_due": next_due,
+            },
+            "$inc": {"send_count": 1}
+        }
+    )
+    
+    return {"message": "Reminder acknowledged", "next_due": next_due}
+
+@api_router.delete("/reminders/{task_id}")
+async def disable_reminder(task_id: str):
+    """Disable reminder for a task"""
+    result = await db.reminders.update_one(
+        {"task_id": task_id},
+        {"$set": {"enabled": False}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="No reminder for this task")
+    return {"message": "Reminder disabled"}
 
 # ----- Stats -----
 

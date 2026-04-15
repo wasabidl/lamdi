@@ -82,4 +82,36 @@ export const getStats = async (): Promise<Stats> => {
   return response.data;
 };
 
+// Transcribe audio via Whisper
+export const transcribeAudio = async (audioBase64: string, fileExtension: string = 'm4a', languageHint?: string): Promise<{ text: string; success: boolean }> => {
+  const formData = new FormData();
+  formData.append('audio_base64', audioBase64);
+  formData.append('file_extension', fileExtension);
+  if (languageHint) formData.append('language_hint', languageHint);
+  
+  const response = await api.post('/transcribe-base64', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60000, // 60s for transcription
+  });
+  return response.data;
+};
+
+// Reminders
+export const configureReminder = async (taskId: string, intervalMinutes: number = 240): Promise<void> => {
+  await api.post('/reminders/configure', { task_id: taskId, interval_minutes: intervalMinutes, enabled: true });
+};
+
+export const getPendingReminders = async (): Promise<{ pending_reminders: any[]; count: number }> => {
+  const response = await api.get('/reminders/pending');
+  return response.data;
+};
+
+export const acknowledgeReminder = async (taskId: string): Promise<void> => {
+  await api.post(`/reminders/acknowledge/${taskId}`);
+};
+
+export const disableReminder = async (taskId: string): Promise<void> => {
+  await api.delete(`/reminders/${taskId}`);
+};
+
 export default api;

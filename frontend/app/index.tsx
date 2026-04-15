@@ -20,6 +20,7 @@ import VoiceRecorder from '../src/components/VoiceRecorder';
 import TextInputModal from '../src/components/TextInputModal';
 import ExtractionResultModal from '../src/components/ExtractionResultModal';
 import { Task, TaskExtractionResponse } from '../src/types';
+import { scheduleTaskReminder, cancelTaskReminder } from '../src/services/notifications';
 
 type FilterType = 'all' | 'pending' | 'completed';
 
@@ -53,6 +54,11 @@ export default function HomeScreen() {
       setExtractionResult(result);
       setShowExtractionResult(true);
       fetchStats();
+      // Auto-schedule reminders for new tasks based on priority
+      for (const task of result.tasks) {
+        const interval = task.priority === 'urgent' ? 30 : task.priority === 'high' ? 120 : 240;
+        scheduleTaskReminder(task.id, task.title, task.priority, interval).catch(() => {});
+      }
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to process voice input');
     } finally {
@@ -68,6 +74,11 @@ export default function HomeScreen() {
       setExtractionResult(result);
       setShowExtractionResult(true);
       fetchStats();
+      // Auto-schedule reminders for new tasks based on priority
+      for (const task of result.tasks) {
+        const interval = task.priority === 'urgent' ? 30 : task.priority === 'high' ? 120 : 240;
+        scheduleTaskReminder(task.id, task.title, task.priority, interval).catch(() => {});
+      }
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to process input');
     } finally {
@@ -79,6 +90,8 @@ export default function HomeScreen() {
     try {
       await completeTask(task.id);
       fetchStats();
+      // Cancel reminder when task is completed
+      cancelTaskReminder(task.id).catch(() => {});
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to update task');
     }
