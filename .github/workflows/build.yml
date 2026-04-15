@@ -13,19 +13,19 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # This line fixes the "No such file" error by creating it manually
-      - name: Force Generate Wrapper
-        run: gradle wrapper
-
       - name: Grant execute permission
+        # This now points to the correct folder
         run: chmod +x gradlew
+        working-directory: frontend/android
 
       - name: Build APK
+        # This runs the build inside the android folder
         run: ./gradlew assembleDebug
+        working-directory: frontend/android
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: my-app-apk
-          # The "**" tells GitHub to search all folders for the APK
-          path: "**/build/outputs/apk/debug/*.apk"
+          # We tell it to search specifically in that folder for the result
+          path: frontend/android/app/build/outputs/apk/debug/*.apk
