@@ -13,19 +13,13 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Grant execute permission
-        # This now points to the correct folder
-        run: chmod +x gradlew
-        working-directory: frontend/android
-
-      - name: Build APK
-        # This runs the build inside the android folder
-        run: ./gradlew assembleDebug
+      # We skip 'gradlew' entirely and use the system's 'gradle'
+      - name: Build APK with System Gradle
+        run: gradle assembleDebug
         working-directory: frontend/android
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: my-app-apk
-          # We tell it to search specifically in that folder for the result
-          path: frontend/android/app/build/outputs/apk/debug/*.apk
+          path: "**/build/outputs/apk/debug/*.apk"
