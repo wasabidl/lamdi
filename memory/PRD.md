@@ -18,12 +18,15 @@ Lamdi ("just work" in Vietnamese) is a voice-first, multilingual AI operations m
 - Uses OpenAI GPT-4o via Emergent LLM key
 - Confidence scoring for extraction quality
 
-#### 2. Voice Input (Whisper-Powered)
-- Device microphone recording (expo-audio)
-- Server-side Whisper transcription (OpenAI whisper-1)
-- Audio sent as base64 to `/api/transcribe-base64` endpoint
-- Text-based fallback for web preview
-- Language auto-detection or manual selection (EN, CS, VI)
+#### 2. Voice Input (Multi-Engine)
+- **Native dev builds**: `@jamsch/expo-speech-recognition` — device-level iOS SFSpeechRecognizer / Android SpeechRecognizer
+- **Web preview**: Browser Web Speech API (Chrome/Edge/Safari)
+- **Expo Go fallback**: Text input (native modules not available)
+- Engine auto-detected at runtime: native > web > text-only
+- Live transcript displayed as user speaks
+- After stopping, auto-expands to text editor for review/edit before sending
+- "or type instead" link for direct text input
+- Server-side Whisper (whisper-1) endpoints remain for audio file transcription
 
 #### 3. Task Management
 - Full CRUD (Create, Read, Update, Delete)
