@@ -36,6 +36,8 @@ jobs:
       - name: Export static web build
         run: npx expo export --platform web
         working-directory: frontend
+        env:
+          EXPO_PUBLIC_BACKEND_URL: ${{ secrets.BACKEND_URL }}
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

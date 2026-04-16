@@ -13,9 +13,8 @@ import json
 import base64
 import tempfile
 import aiofiles
-from emergentintegrations.llm.chat import LlmChat, UserMessage
-from emergentintegrations.llm.openai import OpenAISpeechToText
 import asyncio
+import google.generativeai as genai
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -31,8 +30,10 @@ app = FastAPI(title="Lamdi - AI Voice Task Manager")
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
-# Get Emergent LLM Key
-EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
+# Configure Gemini
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 
 # Configure logging
 logging.basicConfig(
@@ -52,13 +53,13 @@ class Task(BaseModel):
     due_date: Optional[str] = None
     category: Optional[str] = None
     tags: List[str] = []
-    original_input: Optional[str] = None  # Original voice/text input
+    original_input: Optional[str] = None
     language_detected: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None
     reminder_enabled: bool = True
-    reminder_times: List[str] = []  # ISO datetime strings
+    reminder_times: List[str] = []
 
 class TaskCreate(BaseModel):
     title: str
@@ -84,13 +85,13 @@ class Correction(BaseModel):
     task_id: str
     original_extraction: Dict[str, Any]
     corrected_values: Dict[str, Any]
-    correction_type: str  # title, priority, due_date, category, etc.
+    correction_type: str
     original_input: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class LearningPattern(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    pattern_type: str  # phrase_to_priority, keyword_to_category, time_expression, etc.
+    pattern_type: str
     trigger_phrase: str
     extracted_value: str
     confidence: float = 1.0
@@ -122,24 +123,40 @@ def parse_llm_json(response_text: str) -> dict:
         text = text[:-3]
     return json.loads(text.strip())
 
+async def call_gemini(system_message: str, user_message: str) -> str:
+    """Call Gemini Flash and return response text"""
+    if not GEMINI_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="AI not configured. Set GEMINI_API_KEY environment variable."
+        )
+    model = genai.GenerativeModel(
+        model_name='gemini-1.5-flash',
+        system_instruction=system_message,
+        generation_config=genai.GenerationConfig(
+            temperature=0.1,
+            max_output_tokens=2048,
+        )
+    )
+    response = await asyncio.to_thread(model.generate_content, user_message)
+    return response.text
+
 async def analyze_input_intent(text: str, existing_tasks: List[Dict]) -> Dict[str, Any]:
     """Analyze whether user input is about creating new tasks or updating existing ones"""
-    
-    # Build existing tasks context
+
     tasks_ctx = ""
     for t in existing_tasks:
         tasks_ctx += f"- ID: {t['id']} | Title: {t['title']} | Status: {t['status']} | Priority: {t['priority']} | Due: {t.get('due_date', 'none')}\n"
-    
-    # Get learned patterns
+
     patterns = await db.learning_patterns.find().to_list(100)
     patterns_ctx = ""
     if patterns:
         patterns_ctx = "\nLEARNED USER PREFERENCES:\n"
         for p in patterns:
             patterns_ctx += f"- '{p['trigger_phrase']}' → {p['pattern_type']}: {p['extracted_value']}\n"
-    
+
     today = datetime.utcnow().strftime("%Y-%m-%d")
-    
+
     system_message = f"""You are Lamdi, an AI operations manager. You understand English, Czech, and Vietnamese (including code-switching).
 
 Today's date: {today}
@@ -194,19 +211,12 @@ OUTPUT FORMAT (JSON):
 
 Only include fields that actually change. Respond with valid JSON only."""
 
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=f"intent-{uuid.uuid4()}",
-        system_message=system_message
-    ).with_model("openai", "gpt-4o")
-    
     try:
-        response = await chat.send_message(UserMessage(text=f"User says: {text}"))
+        response = await call_gemini(system_message, f"User says: {text}")
         logger.info(f"Intent analysis response: {response}")
         return parse_llm_json(response)
     except json.JSONDecodeError as e:
         logger.error(f"Intent JSON parse error: {e}")
-        # Fallback: treat as new task creation
         return {
             "intent": "create",
             "new_tasks": [{"title": text[:100], "description": "", "priority": "medium", "due_date": None, "category": None, "tags": []}],
@@ -215,21 +225,22 @@ Only include fields that actually change. Respond with valid JSON only."""
             "language_detected": "unknown",
             "confidence": 0.5
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Intent analysis error: {e}")
         raise HTTPException(status_code=500, detail=f"AI processing error: {str(e)}")
 
 async def extract_tasks_from_input(text: str, language_hint: Optional[str] = None) -> Dict[str, Any]:
     """Use LLM to extract structured tasks from unstructured voice/text input"""
-    
-    # Get learned patterns to enhance extraction
+
     patterns = await db.learning_patterns.find().to_list(100)
     patterns_context = ""
     if patterns:
         patterns_context = "\n\nLEARNED USER PREFERENCES:\n"
         for p in patterns:
             patterns_context += f"- When user says '{p['trigger_phrase']}', they usually mean {p['pattern_type']}: {p['extracted_value']}\n"
-    
+
     system_message = f"""You are Lamdi, an AI operations manager specialized in extracting tasks from voice messages and unstructured text.
 
 CAPABILITIES:
@@ -265,45 +276,22 @@ OUTPUT FORMAT (JSON):
 
 Always respond with valid JSON only."""
 
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=f"task-extraction-{uuid.uuid4()}",
-        system_message=system_message
-    ).with_model("openai", "gpt-4o")
-    
     user_msg = f"Extract tasks from this input (language hint: {language_hint or 'auto-detect'}):\n\n{text}"
-    
+
     try:
-        response = await chat.send_message(UserMessage(text=user_msg))
+        response = await call_gemini(system_message, user_msg)
         logger.info(f"LLM Response: {response}")
-        
-        # Parse JSON from response
-        response_text = response.strip()
-        if response_text.startswith("```json"):
-            response_text = response_text[7:]
-        if response_text.startswith("```"):
-            response_text = response_text[3:]
-        if response_text.endswith("```"):
-            response_text = response_text[:-3]
-        
-        result = json.loads(response_text.strip())
-        return result
+        return parse_llm_json(response)
     except json.JSONDecodeError as e:
-        logger.error(f"JSON parse error: {e}, response: {response}")
-        # Return a basic task if parsing fails
+        logger.error(f"JSON parse error: {e}")
         return {
-            "tasks": [{
-                "title": text[:100],
-                "description": text if len(text) > 100 else "",
-                "priority": "medium",
-                "due_date": None,
-                "category": None,
-                "tags": []
-            }],
+            "tasks": [{"title": text[:100], "description": "", "priority": "medium", "due_date": None, "category": None, "tags": []}],
             "raw_interpretation": "Could not fully parse input, created basic task",
             "language_detected": language_hint or "unknown",
             "confidence": 0.5
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"LLM error: {e}")
         raise HTTPException(status_code=500, detail=f"AI processing error: {str(e)}")
@@ -322,7 +310,6 @@ async def health_check():
 
 @api_router.post("/tasks", response_model=Task)
 async def create_task(task_input: TaskCreate):
-    """Create a new task manually"""
     task = Task(**task_input.dict())
     await db.tasks.insert_one(task.dict())
     return task
@@ -334,7 +321,6 @@ async def get_tasks(
     category: Optional[str] = None,
     limit: int = 100
 ):
-    """Get all tasks with optional filters"""
     query = {}
     if status:
         query["status"] = status
@@ -342,13 +328,11 @@ async def get_tasks(
         query["priority"] = priority
     if category:
         query["category"] = category
-    
     tasks = await db.tasks.find(query).sort("created_at", -1).to_list(limit)
     return [Task(**task) for task in tasks]
 
 @api_router.get("/tasks/{task_id}", response_model=Task)
 async def get_task(task_id: str):
-    """Get a specific task"""
     task = await db.tasks.find_one({"id": task_id})
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -356,24 +340,19 @@ async def get_task(task_id: str):
 
 @api_router.put("/tasks/{task_id}", response_model=Task)
 async def update_task(task_id: str, task_update: TaskUpdate):
-    """Update a task"""
     task = await db.tasks.find_one({"id": task_id})
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
     update_data = {k: v for k, v in task_update.dict().items() if v is not None}
     update_data["updated_at"] = datetime.utcnow()
-    
     if task_update.status == "completed" and task.get("status") != "completed":
         update_data["completed_at"] = datetime.utcnow()
-    
     await db.tasks.update_one({"id": task_id}, {"$set": update_data})
     updated_task = await db.tasks.find_one({"id": task_id})
     return Task(**updated_task)
 
 @api_router.delete("/tasks/{task_id}")
 async def delete_task(task_id: str):
-    """Delete a task"""
     result = await db.tasks.delete_one({"id": task_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -386,58 +365,7 @@ async def transcribe_audio(
     audio: UploadFile = File(...),
     language_hint: Optional[str] = Form(None)
 ):
-    """Transcribe audio file using OpenAI Whisper"""
-    # Validate file type
-    allowed_types = ['audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/webm', 'audio/x-m4a',
-                     'audio/ogg', 'audio/mp3', 'video/mp4', 'application/octet-stream']
-    
-    # Save to temp file
-    suffix = '.wav'
-    if audio.filename:
-        suffix = '.' + audio.filename.rsplit('.', 1)[-1] if '.' in audio.filename else '.wav'
-    
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            content = await audio.read()
-            if len(content) > 25 * 1024 * 1024:
-                raise HTTPException(status_code=400, detail="Audio file too large (max 25MB)")
-            tmp.write(content)
-            tmp_path = tmp.name
-        
-        stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
-        
-        with open(tmp_path, "rb") as audio_file:
-            kwargs = {
-                "file": audio_file,
-                "model": "whisper-1",
-                "response_format": "json",
-            }
-            if language_hint and language_hint in ['en', 'cs', 'vi']:
-                kwargs["language"] = language_hint
-            
-            response = await stt.transcribe(**kwargs)
-        
-        transcribed_text = response.text if hasattr(response, 'text') else str(response)
-        logger.info(f"Whisper transcription: {transcribed_text}")
-        
-        # Clean up temp file
-        os.unlink(tmp_path)
-        
-        return {
-            "text": transcribed_text,
-            "language_hint": language_hint,
-            "success": True
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Whisper transcription error: {e}")
-        # Clean up temp file on error
-        try:
-            os.unlink(tmp_path)
-        except:
-            pass
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+    return {"text": "", "success": False, "message": "Use text input on web."}
 
 @api_router.post("/transcribe-base64")
 async def transcribe_audio_base64(
@@ -445,52 +373,10 @@ async def transcribe_audio_base64(
     file_extension: str = Form(default="m4a"),
     language_hint: Optional[str] = Form(None)
 ):
-    """Transcribe base64-encoded audio using OpenAI Whisper"""
-    try:
-        audio_bytes = base64.b64decode(audio_base64)
-        if len(audio_bytes) > 25 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="Audio file too large (max 25MB)")
-        
-        suffix = f'.{file_extension}'
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(audio_bytes)
-            tmp_path = tmp.name
-        
-        stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
-        
-        with open(tmp_path, "rb") as audio_file:
-            kwargs = {
-                "file": audio_file,
-                "model": "whisper-1",
-                "response_format": "json",
-            }
-            if language_hint and language_hint in ['en', 'cs', 'vi']:
-                kwargs["language"] = language_hint
-            
-            response = await stt.transcribe(**kwargs)
-        
-        transcribed_text = response.text if hasattr(response, 'text') else str(response)
-        logger.info(f"Whisper transcription (base64): {transcribed_text}")
-        
-        os.unlink(tmp_path)
-        
-        return {
-            "text": transcribed_text,
-            "language_hint": language_hint,
-            "success": True
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Whisper base64 transcription error: {e}")
-        try:
-            os.unlink(tmp_path)
-        except:
-            pass
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+    return {"text": "", "success": False, "message": "Use text input on web."}
 
 class SmartProcessResponse(BaseModel):
-    intent: str  # create, update, mixed
+    intent: str
     created_tasks: List[Task] = []
     updated_tasks: List[Dict[str, Any]] = []
     raw_interpretation: str
@@ -500,53 +386,22 @@ class SmartProcessResponse(BaseModel):
 @api_router.post("/process-input")
 async def process_voice_input(request: VoiceInputRequest):
     """Smart processing: creates NEW tasks OR updates EXISTING ones based on intent"""
-    
+
     text_to_process = request.text
-    
-    # If audio is provided, transcribe it using Whisper
-    if request.audio_base64 and not text_to_process:
-        try:
-            audio_bytes = base64.b64decode(request.audio_base64)
-            suffix = '.m4a'
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-                tmp.write(audio_bytes)
-                tmp_path = tmp.name
-            
-            stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
-            with open(tmp_path, "rb") as audio_file:
-                kwargs = {"file": audio_file, "model": "whisper-1", "response_format": "json"}
-                if request.language_hint and request.language_hint in ['en', 'cs', 'vi']:
-                    kwargs["language"] = request.language_hint
-                response = await stt.transcribe(**kwargs)
-            
-            text_to_process = response.text if hasattr(response, 'text') else str(response)
-            logger.info(f"Whisper transcription in process-input: {text_to_process}")
-            os.unlink(tmp_path)
-        except Exception as e:
-            logger.error(f"Whisper error in process-input: {e}")
-            try:
-                os.unlink(tmp_path)
-            except:
-                pass
-            raise HTTPException(status_code=500, detail=f"Audio transcription failed: {str(e)}")
-    
     if not text_to_process:
         raise HTTPException(status_code=400, detail="No input provided")
-    
-    # Get existing non-completed tasks for context
+
     existing_tasks = await db.tasks.find(
         {"status": {"$nin": ["completed", "cancelled"]}},
         {"_id": 0}
     ).sort("created_at", -1).to_list(50)
-    
-    # Smart intent analysis
+
     analysis = await analyze_input_intent(text_to_process, existing_tasks)
-    
+
     intent = analysis.get("intent", "create")
     created_tasks = []
     updated_tasks = []
-    
-    # Handle new task creation
+
     for task_data in analysis.get("new_tasks", []):
         task = Task(
             title=task_data.get("title", "Untitled Task"),
@@ -560,34 +415,23 @@ async def process_voice_input(request: VoiceInputRequest):
         )
         await db.tasks.insert_one(task.dict())
         created_tasks.append(task)
-    
-    # Handle task updates (completion, deadline changes, etc.)
+
     for update_data in analysis.get("task_updates", []):
         task_id = update_data.get("task_id")
         changes = update_data.get("changes", {})
         reason = update_data.get("reason", "")
-        
         if not task_id or not changes:
             continue
-        
-        # Verify task exists
         existing = await db.tasks.find_one({"id": task_id})
         if not existing:
             continue
-        
         update_fields = {"updated_at": datetime.utcnow()}
         for field, value in changes.items():
             if value is not None:
                 update_fields[field] = value
-        
         if changes.get("status") == "completed":
             update_fields["completed_at"] = datetime.utcnow()
-            # Disable reminder on completion
-            await db.reminders.update_one(
-                {"task_id": task_id},
-                {"$set": {"enabled": False}}
-            )
-        
+            await db.reminders.update_one({"task_id": task_id}, {"$set": {"enabled": False}})
         await db.tasks.update_one({"id": task_id}, {"$set": update_fields})
         updated_tasks.append({
             "task_id": task_id,
@@ -595,7 +439,7 @@ async def process_voice_input(request: VoiceInputRequest):
             "changes": changes,
             "reason": reason
         })
-    
+
     return {
         "intent": intent,
         "created_tasks": [t.dict() for t in created_tasks],
@@ -603,7 +447,7 @@ async def process_voice_input(request: VoiceInputRequest):
         "raw_interpretation": analysis.get("raw_interpretation", ""),
         "language_detected": analysis.get("language_detected", "unknown"),
         "confidence": analysis.get("confidence", 0.5),
-        "tasks": [t.dict() for t in created_tasks],  # backward compat
+        "tasks": [t.dict() for t in created_tasks],
     }
 
 # ----- Corrections & Learning -----
@@ -616,8 +460,6 @@ async def submit_correction(
     corrected_value: str = Form(...),
     original_input: str = Form(...)
 ):
-    """Submit a correction to learn from user feedback"""
-    
     correction = Correction(
         task_id=task_id,
         original_extraction={"field": correction_type, "value": original_value},
@@ -625,21 +467,13 @@ async def submit_correction(
         correction_type=correction_type,
         original_input=original_input
     )
-    
     await db.corrections.insert_one(correction.dict())
-    
-    # Create or update learning pattern
-    # Find keywords in original input that might relate to the correction
     await learn_from_correction(correction)
-    
     return {"message": "Correction recorded and learning updated", "correction_id": correction.id}
 
 async def learn_from_correction(correction: Correction):
-    """Extract patterns from corrections to improve future extractions"""
-    
-    # Use LLM to identify what triggered the wrong extraction
     system_message = """You are analyzing user corrections to extract learning patterns.
-    
+
 Given the original input and the correction made, identify what phrase or keyword the user used
 that should map to their corrected value.
 
@@ -652,71 +486,43 @@ OUTPUT FORMAT (JSON):
 
 Return ONLY valid JSON."""
 
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=f"learning-{uuid.uuid4()}",
-        system_message=system_message
-    ).with_model("openai", "gpt-4o")
-    
     prompt = f"""Original input: "{correction.original_input}"
 Correction type: {correction.correction_type}
 Original extraction: {correction.original_extraction}
 User corrected to: {correction.corrected_values}
 
 What pattern should I learn from this?"""
-    
+
     try:
-        response = await chat.send_message(UserMessage(text=prompt))
-        response_text = response.strip()
-        if response_text.startswith("```json"):
-            response_text = response_text[7:]
-        if response_text.startswith("```"):
-            response_text = response_text[3:]
-        if response_text.endswith("```"):
-            response_text = response_text[:-3]
-        
-        pattern_data = json.loads(response_text.strip())
-        
-        # Check if pattern already exists
+        response = await call_gemini(system_message, prompt)
+        pattern_data = parse_llm_json(response)
         existing = await db.learning_patterns.find_one({
             "pattern_type": pattern_data["pattern_type"],
             "trigger_phrase": pattern_data["trigger_phrase"]
         })
-        
         if existing:
-            # Update existing pattern
             await db.learning_patterns.update_one(
                 {"id": existing["id"]},
-                {
-                    "$set": {
-                        "extracted_value": pattern_data["extracted_value"],
-                        "updated_at": datetime.utcnow()
-                    },
-                    "$inc": {"usage_count": 1}
-                }
+                {"$set": {"extracted_value": pattern_data["extracted_value"], "updated_at": datetime.utcnow()},
+                 "$inc": {"usage_count": 1}}
             )
         else:
-            # Create new pattern
             pattern = LearningPattern(
                 pattern_type=pattern_data["pattern_type"],
                 trigger_phrase=pattern_data["trigger_phrase"],
                 extracted_value=pattern_data["extracted_value"]
             )
             await db.learning_patterns.insert_one(pattern.dict())
-            
     except Exception as e:
         logger.error(f"Learning pattern extraction error: {e}")
-        # Non-fatal, continue without learning
 
 @api_router.get("/learning-patterns", response_model=List[LearningPattern])
 async def get_learning_patterns():
-    """Get all learned patterns"""
     patterns = await db.learning_patterns.find().to_list(100)
     return [LearningPattern(**p) for p in patterns]
 
 @api_router.delete("/learning-patterns/{pattern_id}")
 async def delete_learning_pattern(pattern_id: str):
-    """Delete a learned pattern"""
     result = await db.learning_patterns.delete_one({"id": pattern_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Pattern not found")
@@ -726,17 +532,14 @@ async def delete_learning_pattern(pattern_id: str):
 
 class ReminderConfig(BaseModel):
     task_id: str
-    interval_minutes: int = 240  # Default 4 hours
+    interval_minutes: int = 240
     enabled: bool = True
 
 @api_router.post("/reminders/configure")
 async def configure_reminder(config: ReminderConfig):
-    """Configure persistent reminders for a task"""
     task = await db.tasks.find_one({"id": config.task_id})
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
-    # Store reminder config
     reminder_data = {
         "id": str(uuid.uuid4()),
         "task_id": config.task_id,
@@ -747,29 +550,17 @@ async def configure_reminder(config: ReminderConfig):
         "send_count": 0,
         "created_at": datetime.utcnow(),
     }
-    
-    # Upsert: update existing or create new
-    await db.reminders.update_one(
-        {"task_id": config.task_id},
-        {"$set": reminder_data},
-        upsert=True
-    )
-    
+    await db.reminders.update_one({"task_id": config.task_id}, {"$set": reminder_data}, upsert=True)
     return {"message": "Reminder configured", "interval_minutes": config.interval_minutes}
 
 @api_router.get("/reminders/pending")
 async def get_pending_reminders():
-    """Get all pending reminders (tasks not completed with active reminders)"""
     now = datetime.utcnow().isoformat()
-    
-    # Get all active reminders
     reminders = await db.reminders.find({"enabled": True}).to_list(100)
-    
     pending = []
     for rem in reminders:
         task = await db.tasks.find_one({"id": rem["task_id"]})
         if task and task.get("status") not in ["completed", "cancelled"]:
-            # Check if reminder is due
             next_due = rem.get("next_due", now)
             if next_due <= now:
                 pending.append({
@@ -781,39 +572,24 @@ async def get_pending_reminders():
                     "send_count": rem.get("send_count", 0),
                     "next_due": next_due,
                 })
-    
     return {"pending_reminders": pending, "count": len(pending)}
 
 @api_router.post("/reminders/acknowledge/{task_id}")
 async def acknowledge_reminder(task_id: str):
-    """Acknowledge a reminder - schedules the next one"""
     reminder = await db.reminders.find_one({"task_id": task_id})
     if not reminder:
         raise HTTPException(status_code=404, detail="No reminder for this task")
-    
     interval = reminder.get("interval_minutes", 240)
     next_due = (datetime.utcnow() + timedelta(minutes=interval)).isoformat()
-    
     await db.reminders.update_one(
         {"task_id": task_id},
-        {
-            "$set": {
-                "last_sent": datetime.utcnow().isoformat(),
-                "next_due": next_due,
-            },
-            "$inc": {"send_count": 1}
-        }
+        {"$set": {"last_sent": datetime.utcnow().isoformat(), "next_due": next_due}, "$inc": {"send_count": 1}}
     )
-    
     return {"message": "Reminder acknowledged", "next_due": next_due}
 
 @api_router.delete("/reminders/{task_id}")
 async def disable_reminder(task_id: str):
-    """Disable reminder for a task"""
-    result = await db.reminders.update_one(
-        {"task_id": task_id},
-        {"$set": {"enabled": False}}
-    )
+    result = await db.reminders.update_one({"task_id": task_id}, {"$set": {"enabled": False}})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="No reminder for this task")
     return {"message": "Reminder disabled"}
@@ -822,17 +598,13 @@ async def disable_reminder(task_id: str):
 
 @api_router.get("/stats")
 async def get_stats():
-    """Get task statistics"""
     total_tasks = await db.tasks.count_documents({})
     pending = await db.tasks.count_documents({"status": "pending"})
     completed = await db.tasks.count_documents({"status": "completed"})
     patterns_count = await db.learning_patterns.count_documents({})
     corrections_count = await db.corrections.count_documents({})
-    
-    # Tasks by priority
     urgent = await db.tasks.count_documents({"priority": "urgent", "status": {"$ne": "completed"}})
     high = await db.tasks.count_documents({"priority": "high", "status": {"$ne": "completed"}})
-    
     return {
         "total_tasks": total_tasks,
         "pending": pending,
