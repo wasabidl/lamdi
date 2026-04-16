@@ -22,4 +22,7 @@ config.cacheStores = [
 // Reduce the number of workers to decrease resource usage
 config.maxWorkers = 2;
 
+// Enable web platform so Metro resolves *.web.ts files (e.g. api.web.ts)
+config.resolver.platforms = ['ios', 'android', 'web'];
+
 module.exports = config;

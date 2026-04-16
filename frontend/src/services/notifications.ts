@@ -2,20 +2,21 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { getPendingReminders, acknowledgeReminder, configureReminder } from '../services/api';
 
-// Configure notification handler
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
-
 export async function requestNotificationPermissions(): Promise<boolean> {
   if (Platform.OS === 'web') return false;
-  
+
+  // Safe here: already past the web guard and inside an async call,
+  // not at module evaluation time. Idempotent — safe to call each time.
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+
   const { status: existing } = await Notifications.getPermissionsAsync();
   let finalStatus = existing;
 
