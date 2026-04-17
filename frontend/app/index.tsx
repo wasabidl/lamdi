@@ -210,6 +210,7 @@ export default function HomeScreen() {
           <View style={styles.loadingBox}>
             <ActivityIndicator size="large" color="#4A6B53" />
             <Text style={styles.loadingText}>Lamdi is thinking...</Text>
+            <Text style={styles.loadingSubtext}>First request may take ~30s to wake up</Text>
           </View>
         </View>
       )}
@@ -264,4 +265,5 @@ const styles = StyleSheet.create({
   loadingOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(249,249,246,0.9)', justifyContent: 'center', alignItems: 'center' },
   loadingBox: { alignItems: 'center', padding: 32, backgroundColor: '#FFFFFF', borderRadius: 20, borderWidth: 1, borderColor: '#E8EBE8' },
   loadingText: { color: '#4A6B53', fontSize: 16, fontWeight: '600', marginTop: 16 },
+  loadingSubtext: { color: '#B8C4B9', fontSize: 12, marginTop: 6 },
 });

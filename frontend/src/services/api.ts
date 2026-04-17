@@ -42,7 +42,8 @@ export const deleteTask = async (taskId: string): Promise<void> => {
 
 // Voice/Text Processing
 export const processInput = async (input: VoiceInputRequest): Promise<TaskExtractionResponse> => {
-  const response = await api.post('/process-input', input);
+  // 90s timeout: Render free tier may need ~60s cold start + Gemini call
+  const response = await api.post('/process-input', input, { timeout: 90000 });
   return response.data;
 };
 
