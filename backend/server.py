@@ -130,6 +130,11 @@ async def call_gemini(system_message: str, user_message: str) -> str:
             status_code=503,
             detail="AI not configured. Set GEMINI_API_KEY environment variable."
         )
+    if not GEMINI_API_KEY.startswith('AIza'):
+        raise HTTPException(
+            status_code=503,
+            detail="GEMINI_API_KEY appears invalid (must start with 'AIza'). Get a new key from aistudio.google.com/apikey"
+        )
     model = genai.GenerativeModel(
         model_name='gemini-1.5-flash',
         system_instruction=system_message,

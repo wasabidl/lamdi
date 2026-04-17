@@ -34,7 +34,21 @@ jobs:
         run: npx expo prebuild --platform android --no-install
         working-directory: frontend
 
-      # STEP 3: Setup the build tool (Gradle 8.6 is the most stable for this)
+      # STEP 3: Bundle JavaScript so the APK is self-contained (no Metro server needed)
+      - name: Bundle JavaScript for Android
+        working-directory: frontend
+        env:
+          EXPO_PUBLIC_BACKEND_URL: https://lamdi.onrender.com
+        run: |
+          mkdir -p android/app/src/main/assets
+          npx react-native bundle \
+            --platform android \
+            --dev false \
+            --entry-file expo-router/entry \
+            --bundle-output android/app/src/main/assets/index.android.bundle \
+            --assets-dest android/app/src/main/res/
+
+      # STEP 4: Setup the build tool (Gradle 8.6 is the most stable for this)
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
