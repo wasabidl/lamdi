@@ -33,7 +33,14 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       const tasks = await api.getTasks(filters);
       set({ tasks, isLoading: false });
     } catch (error: any) {
-      set({ error: error.message || 'Failed to fetch tasks', isLoading: false });
+      // Network errors (ERR_NETWORK, ECONNABORTED) mean the server is sleeping.
+      // Don't block the UI — show empty list so the user can still add tasks.
+      const isNetworkError = error.code === 'ERR_NETWORK' || error.code === 'ECONNABORTED' || error.message === 'Network Error';
+      if (isNetworkError) {
+        set({ isLoading: false });
+      } else {
+        set({ error: error.message || 'Failed to fetch tasks', isLoading: false });
+      }
     }
   },
 
