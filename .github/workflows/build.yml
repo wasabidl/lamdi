@@ -41,12 +41,11 @@ jobs:
           EXPO_PUBLIC_BACKEND_URL: https://lamdi.onrender.com
         run: |
           mkdir -p android/app/src/main/assets
-          npx react-native bundle \
+          npx expo export:embed \
             --platform android \
-            --dev false \
             --entry-file expo-router/entry \
             --bundle-output android/app/src/main/assets/index.android.bundle \
-            --assets-dest android/app/src/main/res/
+            --assets-dest android/app/src/main/res
 
       # STEP 4: Setup the build tool (Gradle 8.6 is the most stable for this)
       - name: Setup Gradle
