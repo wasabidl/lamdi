@@ -8,7 +8,7 @@ import api from '../src/services/api';
 export default function RootLayout() {
   useEffect(() => {
     // Wake backend immediately so it's ready by the time user submits
-    api.get('/health').catch(() => {});
+    api.get('/health', { timeout: 70000 }).catch(() => {});
 
     if (Platform.OS !== 'web') {
       requestNotificationPermissions();

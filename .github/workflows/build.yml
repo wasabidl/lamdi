@@ -34,18 +34,10 @@ jobs:
         run: npx expo prebuild --platform android --no-install
         working-directory: frontend
 
-      # STEP 3: Bundle JavaScript so the APK is self-contained (no Metro server needed)
-      - name: Bundle JavaScript for Android
+      # STEP 3: Tell Gradle to embed the JS bundle in the debug APK
+      - name: Enable JS bundling in debug build
         working-directory: frontend
-        env:
-          EXPO_PUBLIC_BACKEND_URL: https://lamdi.onrender.com
-        run: |
-          mkdir -p android/app/src/main/assets
-          npx expo export:embed \
-            --platform android \
-            --entry-file expo-router/entry \
-            --bundle-output android/app/src/main/assets/index.android.bundle \
-            --assets-dest android/app/src/main/res
+        run: echo "bundleInDebug=true" >> android/gradle.properties
 
       # STEP 4: Setup the build tool (Gradle 8.6 is the most stable for this)
       - name: Setup Gradle
@@ -59,6 +51,8 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
         working-directory: frontend/android
+        env:
+          EXPO_PUBLIC_BACKEND_URL: https://lamdi.onrender.com
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

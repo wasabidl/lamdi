@@ -35,6 +35,7 @@ export default function HomeScreen() {
   const [showExtractionResult, setShowExtractionResult] = useState(false);
   const [extractionResult, setExtractionResult] = useState<any>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [slowRequest, setSlowRequest] = useState(false);
 
   useEffect(() => { fetchTasks(); fetchStats(); }, []);
 
@@ -47,6 +48,8 @@ export default function HomeScreen() {
 
   const handleVoiceTranscription = async (text: string) => {
     setIsProcessing(true);
+    setSlowRequest(false);
+    const slowTimer = setTimeout(() => setSlowRequest(true), 10000);
     try {
       const result = await processVoiceInput(text);
       setExtractionResult(result);
@@ -65,9 +68,12 @@ export default function HomeScreen() {
         }
       }
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to process input');
+      const detail = (err as any).response?.data?.detail || err.message || 'Failed to process input';
+      Alert.alert('Error', detail);
     } finally {
+      clearTimeout(slowTimer);
       setIsProcessing(false);
+      setSlowRequest(false);
     }
   };
 
@@ -209,7 +215,9 @@ export default function HomeScreen() {
         <View style={styles.loadingOverlay}>
           <View style={styles.loadingBox}>
             <ActivityIndicator size="large" color="#4A6B53" />
-            <Text style={styles.loadingText}>Lamdi is thinking...</Text>
+            <Text style={styles.loadingText}>
+              {slowRequest ? 'Waking up server\u2026 first request may take ~60s' : 'Lamdi is thinking\u2026'}
+            </Text>
           </View>
         </View>
       )}
