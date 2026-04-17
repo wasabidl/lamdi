@@ -2,7 +2,7 @@ services:
   - type: web
     name: lamdi-backend
     runtime: docker
-    dockerfilePath: ./backend/Dockerfile
+    dockerfilePath: ./Dockerfile
     plan: free
     envVars:
       - key: MONGO_URL
