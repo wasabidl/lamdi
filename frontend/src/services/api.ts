@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { Task, TaskCreate, TaskUpdate, VoiceInputRequest, TaskExtractionResponse, LearningPattern, Stats } from '../types';
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8001';
+const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://lamdi.onrender.com';
 
 const api = axios.create({
   baseURL: `${API_URL}/api`,
